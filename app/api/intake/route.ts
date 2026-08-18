@@ -1,32 +1,12 @@
 import { extractIntakeDraft, facebookListingUrl } from "../../../lib/intake";
 import { consumeHourlyBudget } from "../../../lib/rate-limit";
+import { readLimitedText } from "../../../lib/request-body";
 
 export const dynamic = "force-dynamic";
 
 const MAX_HTML_BYTES = 1_000_000;
 const MAX_REQUEST_BYTES = 25_000;
 type IntakeBody = { kind?: unknown; text?: unknown; listingUrl?: unknown };
-
-async function limitedRequestText(request: Request) {
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) throw new Error("too_large");
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let output = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_REQUEST_BYTES) {
-      await reader.cancel();
-      throw new Error("too_large");
-    }
-    output += decoder.decode(value, { stream: true });
-  }
-  return output + decoder.decode();
-}
 
 async function limitedText(response: Response) {
   const declared = Number(response.headers.get("content-length") ?? 0);
@@ -112,7 +92,7 @@ async function fetchFacebookMetadata(initialUrl: URL) {
 
 export async function POST(request: Request) {
   let rawBody = "";
-  try { rawBody = await limitedRequestText(request); }
+  try { rawBody = await readLimitedText(request, MAX_REQUEST_BYTES); }
   catch { return Response.json({ error: "Зарын мэдээлэл хэт урт байна." }, { status: 413 }); }
   let body: IntakeBody | null = null;
   try { body = JSON.parse(rawBody) as IntakeBody; } catch { body = null; }

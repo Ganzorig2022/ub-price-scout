@@ -56,6 +56,12 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
 .upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .extract-button:disabled, .upload-button:has(input:disabled) { cursor: wait; opacity: .65; }
 .privacy-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.share-target-tip { margin-top: 15px; border: 1px solid var(--line); background: #edf1e8; padding: 11px 12px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 12px; align-items: center; }
+.share-target-tip > span { background: var(--ink); color: var(--acid); padding: 6px 7px 5px; font-size: 9px; font-weight: 800; letter-spacing: .1em; white-space: nowrap; }
+.share-target-tip > div { display: flex; flex-direction: column; min-width: 0; }
+.share-target-tip b { font-size: 12px; }
+.share-target-tip small { color: var(--muted); font-size: 10px; margin-top: 2px; line-height: 1.4; }
+.share-target-tip button { border: 1px solid var(--ink); background: var(--acid); min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; }
 .draft-panel { border: 1px dashed var(--ink); background: #f8f8f2; padding: 17px; margin-top: 18px; animation: reveal .3s ease-out both; }
 .draft-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
 .draft-head > div { display: flex; flex-direction: column; gap: 3px; }
@@ -143,6 +149,23 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
 .near-section { margin-top: 30px; }
 .near-toggle { width: 100%; border: 1px solid var(--line); background: #e5e5dd; display: flex; justify-content: space-between; padding: 15px; cursor: pointer; }
 .near-list { padding: 0 12px; border: 1px solid var(--line); border-top: 0; }
+.facebook-leads { margin-top: 38px; border: 1px solid var(--ink); background: #e7e9e1; box-shadow: 6px 6px 0 var(--ink); }
+.facebook-leads-head { padding: 19px 20px 16px; border-bottom: 1px solid var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.facebook-leads-head > div { display: flex; flex-direction: column; }
+.facebook-leads-head span { font-size: 9px; letter-spacing: .13em; font-weight: 800; color: var(--muted); }
+.facebook-leads-head h3 { font: 400 29px/1 var(--font-display), serif; margin: 6px 0 0; }
+.facebook-leads-head > b { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--ink); background: var(--acid); font-size: 12px; }
+.facebook-leads > p { margin: 0; padding: 14px 20px; font-size: 11px; line-height: 1.5; color: var(--muted); border-bottom: 1px solid var(--line); }
+.facebook-lead-list { padding: 0 20px; }
+.facebook-lead-row { min-height: 62px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.facebook-lead-row:last-child { border-bottom: 0; }
+.facebook-lead-row > div:first-child { display: grid; grid-template-columns: 9px 1fr; column-gap: 9px; align-items: center; }
+.facebook-lead-row i { width: 8px; height: 8px; border-radius: 50%; background: #1877f2; box-shadow: 0 0 0 3px #1877f21d; }
+.facebook-lead-row small { grid-column: 2; color: var(--muted); font-size: 10px; margin-top: 2px; }
+.facebook-lead-row > div:last-child { display: flex; gap: 7px; }
+.facebook-lead-row a { color: inherit; text-decoration: none; border: 1px solid var(--ink); background: var(--white); padding: 7px 9px; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.facebook-lead-row a:first-child { background: var(--acid); }
+.facebook-lead-row a:hover { transform: translate(-1px,-1px); box-shadow: 2px 2px 0 var(--ink); }
 .empty-state { min-height: 230px; border-bottom: 1px solid var(--ink); display: grid; grid-template-columns: 70px 1fr; gap: 22px; align-items: center; }
 .empty-mark { width: 65px; height: 65px; border-radius: 50%; border: 1px solid var(--ink); display: grid; place-items: center; font: 40px var(--font-display), serif; background: var(--acid); }
 .empty-state h3 { margin: 0 0 8px; font-size: 20px; }
@@ -191,6 +214,8 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
   .input-tabs button { padding: 12px 8px; font-size: 12px; }
   .intake-actions { display: grid; grid-template-columns: 1fr; }
   .extract-button, .upload-button { width: 100%; }
+  .share-target-tip { grid-template-columns: auto 1fr; }
+  .share-target-tip button { grid-column: 1 / -1; width: 100%; }
   .price-and-action { grid-template-columns: 1fr; }
   .scan-button { height: 54px; }
   .source-strip { row-gap: 10px; }
@@ -211,6 +236,9 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
   .listing-price { grid-column: 2; font-size: 18px; }
   .external { grid-row: 1 / span 2; grid-column: 3; }
   .ledger-list { grid-template-columns: 1fr; }
+  .facebook-lead-row { align-items: flex-start; flex-direction: column; gap: 10px; padding: 14px 0; }
+  .facebook-lead-row > div:last-child { width: 100%; }
+  .facebook-lead-row a { flex: 1; text-align: center; }
   .report-footer { align-items: flex-start; flex-direction: column; padding-top: 25px; padding-bottom: 30px; }
   .report-footer p { order: 3; margin: 0; }
 }

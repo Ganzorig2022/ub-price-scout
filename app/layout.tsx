@@ -26,7 +26,10 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     metadataBase: new URL(origin),
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    manifest: "/manifest.webmanifest",
+    applicationName: "УБ Үнэ Тандагч",
+    appleWebApp: { capable: true, title: "Үнэ Тандагч", statusBarStyle: "black-translucent" },
+    icons: { icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }], apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }] },
     openGraph: { title, description, type: "website", locale: "mn_MN", images: [{ url: `${origin}/og.png`, width: 1731, height: 909, alt: "УБ Үнэ Тандагч — Авахаасаа өмнө бодит үнийг мэд" }] },
     twitter: { card: "summary_large_image", title, description, images: [`${origin}/og.png`] },
   };

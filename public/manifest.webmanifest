@@ -1,0 +1,21 @@
+{
+  "name": "УБ Үнэ Тандагч",
+  "short_name": "Үнэ Тандагч",
+  "description": "Facebook зар болон Улаанбаатарын дэлгүүрүүдийн үнийг харьцуулна.",
+  "lang": "mn",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f1f0e8",
+  "theme_color": "#162019",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

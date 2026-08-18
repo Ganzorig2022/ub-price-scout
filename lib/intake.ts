@@ -11,6 +11,14 @@ export type IntakeDraft = {
   diagnostics: IntakeDiagnostic[];
 };
 
+export type SharedIntake = {
+  draft: IntakeDraft;
+  listingUrl: string;
+  postText: string;
+};
+
+type SharedPayload = { title?: unknown; text?: unknown; url?: unknown };
+
 const FACEBOOK_HOSTS = new Set(["facebook.com", "www.facebook.com", "m.facebook.com", "web.facebook.com", "fb.watch"]);
 const FACEBOOK_PUBLIC_PARAMS = new Set(["fbid", "set", "story_fbid", "id"]);
 
@@ -69,7 +77,8 @@ function cleanCandidate(value: string) {
     .replace(/\p{Extended_Pictographic}/gu, " ")
     .replace(/\b(?:зарна|зарж байна|худалдана|шинэ|цоо шинэ|sealed|brand new|бэлэн)\b/giu, " ")
     .replace(/(?:үнэ|price)\s*[:：-]?\s*\d[\d\s,.]*(?:₮|төг(?:рөг)?|mnt|сая|say|million|мянга|мян|k)?/giu, " ")
-    .replace(/\d[\d\s,.]*(?:₮|төг(?:рөг)?|mnt|сая|say|million)\b/giu, " ")
+    .replace(/\d[\d\s,.]*(?:₮|төг(?:рөг)?|mnt|сая|say|million)(?![a-zа-яөүё])/giu, " ")
+    .replace(/₮/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s:–—-]+|[\s:–—-]+$/g, "")
     .trim();
@@ -112,6 +121,26 @@ export function extractIntakeDraft(text: string): IntakeDraft {
       "needs_confirmation",
     ],
   };
+}
+
+export function extractSharedPayload(value: unknown): SharedIntake | null {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as SharedPayload;
+  const title = typeof payload.title === "string" ? payload.title.trim().slice(0, 500) : "";
+  const text = typeof payload.text === "string" ? payload.text.trim().slice(0, 8_000) : "";
+  const explicitUrl = typeof payload.url === "string" ? payload.url.trim().slice(0, 1_000) : "";
+  const combined = [title, text].filter(Boolean).join("\n");
+  const embeddedUrl = combined.match(/https:\/\/[^\s<>"']+/i)?.[0] ?? "";
+  const listing = facebookListingUrl(explicitUrl) ?? facebookListingUrl(embeddedUrl);
+  const postText = [combined, listing?.toString() && !combined.includes(listing.toString()) ? listing.toString() : ""].filter(Boolean).join("\n");
+  if (!postText) return null;
+  return { draft: extractIntakeDraft(postText), listingUrl: listing?.toString() ?? "", postText };
+}
+
+export function extractSharedIntake(search: string): SharedIntake | null {
+  const params = new URLSearchParams(search);
+  if (params.get("shared") !== "1") return null;
+  return extractSharedPayload({ title: params.get("title"), text: params.get("text"), url: params.get("url") });
 }
 
 export function queryVariants(query: string): string[] {

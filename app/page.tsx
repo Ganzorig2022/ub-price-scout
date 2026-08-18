@@ -1,12 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { extractIntakeDraft, facebookListingUrl, type IntakeDraft } from "../lib/intake";
+import { extractIntakeDraft, extractSharedIntake, extractSharedPayload, facebookListingUrl, type IntakeDraft } from "../lib/intake";
 
 type Listing = { seller: string; title: string; price: number; url: string; match: "exact" | "near"; stock: "in_stock" | "out_of_stock" | "unknown"; confidence: number; checkedAt: string; note?: string };
 type Source = { seller: string; searchUrl: string; state: "found" | "no_match" | "blocked" | "timed_out" | "unreadable"; listings: Listing[]; attemptedQueries?: string[] };
-type Report = { query: string; targetPrice: number | null; listingUrl: string | null; verdict: "great" | "fair" | "high" | "insufficient"; median: number | null; low: number | null; high: number | null; exact: Listing[]; near: Listing[]; sources: Source[]; checkedAt: string };
+type FacebookLead = { seller: string; pageUrl: string; searchUrl: string; status: "manual_lead" };
+type Report = { query: string; targetPrice: number | null; listingUrl: string | null; verdict: "great" | "fair" | "high" | "insufficient"; median: number | null; low: number | null; high: number | null; exact: Listing[]; near: Listing[]; sources: Source[]; facebookLeads?: FacebookLead[]; checkedAt: string };
 type IntakeMode = "details" | "facebook_text" | "facebook_link";
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 
 const EXAMPLE = "Apple iPad 11 A16 256GB Wi-Fi";
 
@@ -40,9 +42,34 @@ export default function Home() {
   const [reportId, setReportId] = useState("");
   const [copied, setCopied] = useState(false);
   const [showNear, setShowNear] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
 
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("report");
+    const params = new URLSearchParams(window.location.search);
+    let storedPayload: unknown = null;
+    try {
+      const stored = window.sessionStorage.getItem("ub-price-scout-share");
+      window.sessionStorage.removeItem("ub-price-scout-share");
+      if (stored) storedPayload = JSON.parse(stored);
+    } catch {
+      storedPayload = null;
+    }
+    const shared = extractSharedPayload(storedPayload) ?? extractSharedIntake(window.location.search);
+    if (shared) {
+      window.history.replaceState({}, "", window.location.pathname);
+      const frame = requestAnimationFrame(() => {
+        setMode(shared.listingUrl ? "facebook_link" : "facebook_text");
+        setListingUrl(shared.listingUrl);
+        setPostText(shared.postText);
+        setQuery(shared.draft.query);
+        setTargetPrice(shared.draft.targetPrice ? String(shared.draft.targetPrice) : "");
+        setDraftConfidence(shared.draft.confidence);
+        setDraftReady(true);
+        setError(shared.draft.query ? "" : "Хуваалцсан зараас барааны нэрийг ялгаж чадсангүй. Доорх талбарт гараар оруулна уу.");
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    const id = params.get("report");
     if (!id) return;
     fetch(`/api/scan?id=${encodeURIComponent(id)}`)
       .then(async (response) => {
@@ -53,6 +80,13 @@ export default function Home() {
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Энэ тайланг нээж чадсангүй."))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
   }, []);
 
   const sourceStats = useMemo(() => {
@@ -151,6 +185,18 @@ export default function Home() {
     catch { setError("Тайланг хуваалцахын тулд хөтчийн хаягийг хуулна уу."); }
   }
 
+  async function installApp() {
+    if (!installPrompt) return;
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+    } catch {
+      setError("Апп суулгах хүсэлтийг нээж чадсангүй. Хөтчийн цэснээс суулгана уу.");
+    } finally {
+      setInstallPrompt(null);
+    }
+  }
+
   function reset() {
     setReport(null); setReportId(""); setError(""); setShowNear(false); setDraftReady(mode === "details");
     window.history.replaceState({}, "", window.location.pathname);
@@ -177,6 +223,7 @@ export default function Home() {
           </div>
           {mode === "facebook_text" && <div className="social-intake"><div className="field"><label htmlFor="post-text">Facebook зарын текст</label><textarea id="post-text" value={postText} onChange={(event) => { setPostText(event.target.value); setDraftReady(false); }} placeholder={'Жишээ:\nRedmi Pad 2 Pro 8/256GB\nЦоо шинэ, үнэ 1.9 сая₮'} rows={5} /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={extractFromText} disabled={extracting}>Текстээс мэдээлэл ялгах</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг уншуулах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Дэлгэцийн зураг таны төхөөрөмжөөс гарахгүй. Текст танилт хөтөч дотор ажиллана.</p></div>}
           {mode === "facebook_link" && <div className="social-intake"><div className="field"><label htmlFor="listing-url">Нийтэд нээлттэй Facebook холбоос</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => { setListingUrl(event.target.value); setDraftReady(false); }} placeholder="https://facebook.com/…" /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={() => void extractFromUrl()} disabled={extracting}>{extracting ? "Уншиж байна…" : "Холбоосоос мэдээлэл авах"}</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг ашиглах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Facebook хаалттай бол зарын текст эсвэл дэлгэцийн зураг ашиглаарай.</p></div>}
+          {mode !== "details" && <div className="share-target-tip"><span>ШУУД ХУВААЛЦАХ</span><div><b>Facebook → Share (Хуваалцах) → УБ Үнэ Тандагч</b><small>Аппыг төхөөрөмждөө суулгасны дараа постын текст, холбоос шууд энд орж ирнэ.</small></div>{installPrompt && <button type="button" onClick={() => void installApp()}>Апп суулгах</button>}</div>}
           {(mode === "details" || draftReady) && <div className={mode === "details" ? "confirmation-fields" : "draft-panel"}>{mode !== "details" && <div className="draft-head"><div><span>ТАНЬСАН МЭДЭЭЛЭЛ</span><b>Шалгаад засварлана уу</b></div><strong>{draftConfidence}%</strong></div>}<div className="field"><label htmlFor="product-query">Барааны нэр ба гол үзүүлэлт</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Xiaomi Redmi Pad 2 Pro 8GB 256GB" autoComplete="off" /></div><div className="price-and-action"><div className="field price-field"><label htmlFor="asking-price">Зарын үнэ <span>заавал биш</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div><button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Дэлгүүрүүдийг шалгаж байна…</> : <>УБ-ын үнийг хайх <span>→</span></>}</button></div></div>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { changeMode("details"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
@@ -214,9 +261,11 @@ export default function Home() {
         <div className="results-layout">
           <div className="listings-column">
             <div className="section-title"><div><span>БОДИТ ҮНИЙН ХАРЬЦУУЛАЛТ</span><h3>Яг ижил бараа</h3></div><span className="count-pill">{report.exact.length}</span></div>
-            {report.exact.length ? <div className="listing-table">{report.exact.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div> : <div className="empty-state"><div className="empty-mark">?</div><div><h3>Баталгаатай, яг ижил бараа олдсонгүй</h3><p>Зарим дэлгүүр бараагаа скриптийн цаана нуух эсвэл автомат хандалтыг хаах боломжтой. Аль эх сурвалж хариу өгснийг баруун талын жагсаалтаас харна уу. Загварын нэрийг товчлох эсвэл хайлтын холбоосыг шууд нээгээрэй.</p></div></div>}
+            {report.exact.length ? <div className="listing-table">{report.exact.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div> : <div className="empty-state"><div className="empty-mark">?</div><div><h3>Баталгаатай, яг ижил бараа олдсонгүй</h3><p>Зарим дэлгүүр бараагаа скриптийн цаана нуух эсвэл автомат хандалтыг хаах боломжтой. Аль эх сурвалж хариу өгснийг баруун талын жагсаалтаас харна уу. Загварын нэрийг товчлох эсвэл доорх Facebook сэжмүүдийг нээгээрэй.</p></div></div>}
 
             {!!report.near.length && <div className="near-section"><button className="near-toggle" onClick={() => setShowNear((value) => !value)} aria-expanded={showNear} aria-controls="near-match-results"><span><b>Төстэй бараа</b> · үнийн дүгнэлтэд ороогүй</span><span>{report.near.length} {showNear ? "−" : "+"}</span></button>{showNear && <div className="listing-table near-list" id="near-match-results">{report.near.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div>}</div>}
+
+            {!!report.facebookLeads?.length && <section className="facebook-leads" aria-labelledby="facebook-leads-title"><div className="facebook-leads-head"><div><span>FACEBOOK СЭЖИМ · ГАРААР ШАЛГАНА</span><h3 id="facebook-leads-title">Facebook худалдааны постууд</h3></div><b>{report.facebookLeads.length}</b></div><p>Facebook хайлтын үр дүнг таны нэвтэрсэн төхөөрөмж дээр нээнэ. Эдгээр нь автоматаар баталгаажсан үнэ биш бөгөөд зах зээлийн дундажт ороогүй.</p><div className="facebook-lead-list">{report.facebookLeads.map((lead) => <div className="facebook-lead-row" key={lead.seller}><div><i /> <b>{lead.seller}</b><small>Баталгаажаагүй Facebook сэжим</small></div><div><a href={lead.searchUrl} target="_blank" rel="noreferrer">Пост хайх ↗</a><a href={lead.pageUrl} target="_blank" rel="noreferrer">Хуудас</a></div></div>)}</div></section>}
           </div>
 
           <aside className="source-ledger">

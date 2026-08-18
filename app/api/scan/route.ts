@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { scans } from "../../../db/schema";
+import { facebookMerchantLeads } from "../../../lib/facebook-leads";
 import { facebookListingUrl, queryVariants } from "../../../lib/intake";
+import { compareProductTitle, type MatchKind } from "../../../lib/matching";
 import { consumeHourlyBudget } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
-
-type MatchKind = "exact" | "near";
 
 type Listing = {
   seller: string;
@@ -42,28 +42,10 @@ const SOURCES: SourceDefinition[] = [
   { seller: "Unegui", host: "www.unegui.mn", url: (q: string) => `https://www.unegui.mn/kompyuter-busad/?q=${q}` },
 ] as const;
 
-const IMPORTANT_TOKEN = /^(?:\d{1,4}|\d{1,4}(?:gb|tb)|wifi|wi-fi|cellular|lte|5g|a\d{1,2}|m\d|pro|max|plus|ultra|mini)$/i;
 const PRICE_RE = /(?:₮|MNT|Үнэ[:\s]*)\s*([\d,. ]{5,15})|([\d,. ]{5,15})\s*(?:₮|MNT|төг(?:рөг)?)/gi;
 
 function cleanText(value: string) {
   return value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;|&#34;/gi, '"').replace(/\s+/g, " ").trim();
-}
-
-function tokens(value: string) {
-  return value.toLowerCase().replace(/wi[\s-]?fi/g, "wifi").match(/[a-zа-яөүё0-9]+/giu)?.filter((token) => token.length > 1 || /^\d+$/.test(token)) ?? [];
-}
-
-function compareTitle(query: string, title: string): { match: MatchKind; confidence: number } | null {
-  const wanted = [...new Set(tokens(query))];
-  const actual = new Set(tokens(title));
-  if (!wanted.length) return null;
-  const hit = wanted.filter((token) => actual.has(token)).length;
-  const ratio = hit / wanted.length;
-  const important = wanted.filter((token) => IMPORTANT_TOKEN.test(token));
-  const importantHit = important.filter((token) => actual.has(token)).length;
-  const exact = ratio >= 0.72 && importantHit === important.length;
-  if (!exact && ratio < 0.42) return null;
-  return { match: exact ? "exact" : "near", confidence: Math.round(Math.min(0.98, ratio * 0.86 + (exact ? 0.1 : 0)) * 100) };
 }
 
 function priceFrom(value: string) {
@@ -93,7 +75,7 @@ function listingFromObject(value: unknown, seller: string, base: string, query: 
   const numericText = String(rawPrice ?? "").replace(/[,\s]/g, "");
   const directPrice = /^\d+(?:\.\d{1,2})?$/.test(numericText) ? Number(numericText) : null;
   const price = typeof rawPrice === "number" ? rawPrice : directPrice && directPrice >= 10_000 ? directPrice : priceFrom(String(rawPrice ?? ""));
-  const comparison = compareTitle(query, title);
+  const comparison = compareProductTitle(query, title);
   if (!price || !comparison) return null;
   const rawAvailability = String(offer.availability ?? item.availability ?? "").toLowerCase();
   const stock = rawAvailability.includes("outofstock") || rawAvailability.includes("sold") ? "out_of_stock" : rawAvailability.includes("instock") ? "in_stock" : "unknown";
@@ -127,7 +109,7 @@ function parseListings(html: string, seller: string, base: string, query: string
     const embedded = html.replace(/\\"/g, '"');
     for (const match of embedded.matchAll(/"name":"([^"<>]{3,180})"/gi)) {
       const title = cleanText(match[1]);
-      const comparison = compareTitle(query, title);
+      const comparison = compareProductTitle(query, title);
       if (!comparison || match.index === undefined) continue;
       const segment = embedded.slice(match.index, match.index + 5000);
       const rawPrice = segment.match(/"sellingPrice":(\d+(?:\.\d+)?)/i)?.[1] ?? segment.match(/"price":(\d+(?:\.\d+)?)/i)?.[1];
@@ -144,7 +126,7 @@ function parseListings(html: string, seller: string, base: string, query: string
       const title = cleanText(anchor[3]);
       const nearby = cleanText(anchor[0]);
       const price = priceFrom(nearby);
-      const comparison = compareTitle(query, title);
+      const comparison = compareProductTitle(query, title);
       if (price && comparison) found.push({ seller, title: title.slice(0, 180), price, url: absoluteUrl(anchor[2], base), match: comparison.match, confidence: Math.min(comparison.confidence, 78), stock: "unknown", checkedAt: new Date().toISOString(), note: "Хайлтын үр дүнгээс үнийг уншив" });
       if (found.length >= 8) break;
     }
@@ -162,7 +144,7 @@ function candidateLinks(html: string, base: string, host: string, query: string)
   const anchors = html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi);
   for (const anchor of anchors) {
     const title = cleanText(anchor[2]);
-    const comparison = compareTitle(query, title);
+    const comparison = compareProductTitle(query, title);
     if (!comparison) continue;
     try {
       const url = new URL(anchor[1], base);
@@ -198,7 +180,7 @@ async function sitemapCandidates(source: SourceDefinition, query: string) {
       try {
         const url = new URL(match[1].replace(/&amp;/g, "&"));
         if (!(url.hostname === source.host || url.hostname.endsWith(`.${source.host}`))) continue;
-        const comparison = compareTitle(query, decodeURIComponent(url.pathname).replace(/[-_/]/g, " "));
+        const comparison = compareProductTitle(query, decodeURIComponent(url.pathname).replace(/[-_/]/g, " "));
         if (comparison) candidates.set(url.toString(), comparison.confidence);
       } catch { /* skip malformed sitemap locations */ }
     }
@@ -249,7 +231,7 @@ function summarize(query: string, targetPrice: number | null, listingUrl: string
   const high = livePrices.length ? livePrices[livePrices.length - 1] : null;
   let verdict: "great" | "fair" | "high" | "insufficient" = "insufficient";
   if (targetPrice && median) verdict = targetPrice <= median * 0.92 ? "great" : targetPrice <= median * 1.08 ? "fair" : "high";
-  return { query, targetPrice, listingUrl, verdict, median, low, high, exact, near, sources: sourceResults, checkedAt: new Date().toISOString() };
+  return { query, targetPrice, listingUrl, verdict, median, low, high, exact, near, sources: sourceResults, facebookLeads: facebookMerchantLeads(query), checkedAt: new Date().toISOString() };
 }
 
 function validPayload(value: unknown): { query: string; targetPrice: number | null; listingUrl: string | null } | null {
