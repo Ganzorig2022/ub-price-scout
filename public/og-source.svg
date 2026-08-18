@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1731" height="909" viewBox="0 0 1731 909">
+  <defs>
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" seed="7" result="n"/>
+      <feBlend in="SourceGraphic" in2="n" mode="multiply"/>
+    </filter>
+  </defs>
+  <rect width="1731" height="909" fill="#f1f0e8"/>
+  <rect x="48" y="50" width="1635" height="812" fill="none" stroke="#162019" stroke-width="3"/>
+  <path d="M48 742H1683M48 778H1683M48 814H1683" stroke="#162019" stroke-width="1.5" stroke-dasharray="6 4" opacity=".7"/>
+  <path d="M140 742V862M730 742V862M879 742V862M1004 742V862M1149 742V862" stroke="#162019" stroke-width="3"/>
+  <rect x="48" y="50" width="600" height="118" fill="#d9ff43"/>
+  <text x="88" y="132" fill="#162019" font-family="Arial, sans-serif" font-size="63" font-weight="800" letter-spacing="-2">УБ ҮНЭ ТАНДАГЧ</text>
+  <text x="84" y="338" fill="#162019" font-family="Arial, sans-serif" font-size="143" font-weight="900" letter-spacing="-7">АВАХААСАА</text>
+  <text x="84" y="500" fill="#162019" font-family="Arial, sans-serif" font-size="143" font-weight="900" letter-spacing="-7">ӨМНӨ БОДИТ</text>
+  <text x="84" y="662" fill="#162019" font-family="Arial, sans-serif" font-size="143" font-weight="900" letter-spacing="-7">ҮНИЙГ МЭД.</text>
+  <text x="1195" y="548" fill="none" stroke="#162019" stroke-width="4" font-family="Arial, sans-serif" font-size="510" font-weight="700">₮</text>
+  <g transform="translate(1320 595) rotate(-9)">
+    <path d="M0 42Q30 42 30 12H350Q350 42 380 42V245Q350 245 350 275H30Q30 245 0 245Z" fill="#ff5a24"/>
+    <rect x="24" y="35" width="332" height="205" fill="none" stroke="#162019" stroke-width="3"/>
+    <text x="190" y="197" text-anchor="middle" fill="#162019" font-family="Arial, sans-serif" font-size="156" font-weight="900">₮</text>
+  </g>
+  <rect width="1731" height="909" opacity=".035" filter="url(#noise)"/>
+</svg>

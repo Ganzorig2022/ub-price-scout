@@ -18,10 +18,11 @@ test("server-renders the product scanner", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /UB Price Scout/);
-  assert.match(html, /Know the street price/);
-  assert.match(html, /Scan UB prices/);
-  assert.match(html, /Product name and specifications/);
+  assert.match(html, /УБ Үнэ Тандагч/);
+  assert.match(html, /Авахаасаа өмнө/);
+  assert.match(html, /УБ-ын үнийг хайх/);
+  assert.match(html, /Барааны нэр ба үзүүлэлт/);
+  assert.match(html, /<html lang="mn"/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
 

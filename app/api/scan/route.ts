@@ -132,7 +132,7 @@ function parseListings(html: string, seller: string, base: string, query: string
       const price = rawPrice ? Number(rawPrice) : null;
       if (!price || price < 10_000 || price > 500_000_000) continue;
       const stock = /"(?:canSupply|inStock)":true/i.test(segment) || /"totalOnHand":(?:[1-9]\d*)/i.test(segment) ? "in_stock" : /"(?:canSupply|inStock)":false/i.test(segment) ? "out_of_stock" : "unknown";
-      found.push({ seller, title: title.slice(0, 180), price, url: base, match: comparison.match, confidence: comparison.confidence, stock, checkedAt: new Date().toISOString(), note: "Price parsed from retailer product data" });
+      found.push({ seller, title: title.slice(0, 180), price, url: base, match: comparison.match, confidence: comparison.confidence, stock, checkedAt: new Date().toISOString(), note: "Дэлгүүрийн барааны өгөгдлөөс үнийг уншив" });
       if (found.length >= 8) break;
     }
   }
@@ -143,7 +143,7 @@ function parseListings(html: string, seller: string, base: string, query: string
       const nearby = cleanText(anchor[0]);
       const price = priceFrom(nearby);
       const comparison = compareTitle(query, title);
-      if (price && comparison) found.push({ seller, title: title.slice(0, 180), price, url: absoluteUrl(anchor[2], base), match: comparison.match, confidence: Math.min(comparison.confidence, 78), stock: "unknown", checkedAt: new Date().toISOString(), note: "Price parsed from search result" });
+      if (price && comparison) found.push({ seller, title: title.slice(0, 180), price, url: absoluteUrl(anchor[2], base), match: comparison.match, confidence: Math.min(comparison.confidence, 78), stock: "unknown", checkedAt: new Date().toISOString(), note: "Хайлтын үр дүнгээс үнийг уншив" });
       if (found.length >= 8) break;
     }
   }
@@ -268,10 +268,10 @@ async function rateLimit(request: Request) {
 
 export async function POST(request: Request) {
   const payload = validPayload(await request.json().catch(() => null));
-  if (!payload) return Response.json({ error: "Enter at least three characters describing the product." }, { status: 400 });
+  if (!payload) return Response.json({ error: "Барааг тодорхойлсон гурваас доошгүй тэмдэгт оруулна уу." }, { status: 400 });
   const limit = await rateLimit(request);
-  if (limit === "limited") return Response.json({ error: "The hourly live-scan allowance has been used. Saved reports and retailer links remain available; try again next hour." }, { status: 429, headers: { "retry-after": "3600" } });
-  if (limit === "unavailable") return Response.json({ error: "Live scanning is temporarily unavailable while its safety limit resets. Please try again shortly." }, { status: 503, headers: { "retry-after": "120" } });
+  if (limit === "limited") return Response.json({ error: "Энэ цагийн бодит үнийн хайлтын хязгаар дууслаа. Хадгалсан тайлан болон дэлгүүрийн холбоосууд нээлттэй хэвээр байна. Дараагийн цагт дахин оролдоно уу." }, { status: 429, headers: { "retry-after": "3600" } });
+  if (limit === "unavailable") return Response.json({ error: "Аюулгүйн хязгаар шинэчлэгдэж байгаа тул бодит үнийн хайлт түр боломжгүй байна. Удахгүй дахин оролдоно уу." }, { status: 503, headers: { "retry-after": "120" } });
   const results = await Promise.all(SOURCES.map((source) => scanSource(source, payload.query)));
   const report = summarize(payload.query, payload.targetPrice, payload.listingUrl, results);
   const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
@@ -284,12 +284,12 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const id = new URL(request.url).searchParams.get("id")?.slice(0, 32);
-  if (!id) return Response.json({ error: "Missing report id." }, { status: 400 });
+  if (!id) return Response.json({ error: "Тайлангийн дугаар дутуу байна." }, { status: 400 });
   try {
     const row = await getDb().select().from(scans).where(eq(scans.id, id)).limit(1);
-    if (!row[0]) return Response.json({ error: "Report not found." }, { status: 404 });
+    if (!row[0]) return Response.json({ error: "Тайлан олдсонгүй." }, { status: 404 });
     return Response.json({ id: row[0].id, report: JSON.parse(row[0].report) });
   } catch {
-    return Response.json({ error: "Saved reports are temporarily unavailable." }, { status: 503 });
+    return Response.json({ error: "Хадгалсан тайлангууд түр хугацаанд нээгдэхгүй байна." }, { status: 503 });
   }
 }

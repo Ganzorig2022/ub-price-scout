@@ -11,8 +11,16 @@ const EXAMPLE = "Apple iPad 11 A16 256GB Wi-Fi";
 const money = (value: number | null) => value === null ? "—" : `${new Intl.NumberFormat("mn-MN").format(value)}₮`;
 const relativeTime = (iso: string) => {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  return minutes < 1 ? "just now" : minutes === 1 ? "1 min ago" : `${minutes} min ago`;
+  return minutes < 1 ? "дөнгөж сая" : `${minutes} минутын өмнө`;
 };
+
+async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+}
 
 export default function Home() {
   const [mode, setMode] = useState<"name" | "link">("name");
@@ -31,12 +39,12 @@ export default function Home() {
     if (!id) return;
     fetch(`/api/scan?id=${encodeURIComponent(id)}`)
       .then(async (response) => {
-        const payload = await response.json() as { id: string; report: Report; error?: string };
-        if (!response.ok) throw new Error(payload.error ?? "Could not open this report.");
+        const payload = await readJson<{ id: string; report: Report; error?: string }>(response, "Тайлангийн мэдээллийг уншиж чадсангүй. Дахин оролдоно уу.");
+        if (!response.ok) throw new Error(payload.error ?? "Энэ тайланг нээж чадсангүй.");
         setReport(payload.report);
         setReportId(payload.id);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Could not open this report."))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "Энэ тайланг нээж чадсангүй."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -53,30 +61,30 @@ export default function Home() {
     event.preventDefault();
     const cleanQuery = query.trim();
     if (cleanQuery.length < 3) {
-      setError(mode === "link" ? "Add the exact product name so stores can be compared correctly." : "Describe the product with its model and important specifications.");
+      setError(mode === "link" ? "Дэлгүүрүүдийн үнийг зөв харьцуулахын тулд барааны бүтэн нэрийг оруулна уу." : "Барааны загвар болон гол үзүүлэлтүүдийг оруулна уу.");
       return;
     }
     if (mode === "link") {
       try { const parsed = new URL(listingUrl.trim()); if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error(); }
-      catch { setError("Paste a complete public http or https listing link."); return; }
+      catch { setError("Нийтэд нээлттэй http эсвэл https холбоосыг бүтнээр нь оруулна уу."); return; }
     }
     setLoading(true); setError(""); setReport(null); setCopied(false);
     try {
       const numericPrice = Number(targetPrice.replace(/[^\d]/g, ""));
       const response = await fetch("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: cleanQuery, targetPrice: numericPrice > 0 ? numericPrice : null, listingUrl: listingUrl.trim() || null }) });
-      const payload = await response.json() as { id: string | null; persisted: boolean; report: Report; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "The scan could not be completed.");
+      const payload = await readJson<{ id: string | null; persisted: boolean; report: Report; error?: string }>(response, "Серверийн хариуг уншиж чадсангүй. Дахин оролдоно уу.");
+      if (!response.ok) throw new Error(payload.error ?? "Үнийн хайлтыг гүйцээж чадсангүй.");
       setReport(payload.report); setReportId(payload.id ?? "");
       if (payload.persisted && payload.id) window.history.replaceState({}, "", `${window.location.pathname}?report=${payload.id}`);
       requestAnimationFrame(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The scan could not be completed.");
+      setError(reason instanceof Error ? reason.message : "Үнийн хайлтыг гүйцээж чадсангүй.");
     } finally { setLoading(false); }
   }
 
   async function shareReport() {
     try { await navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1800); }
-    catch { setError("Copy the address from your browser to share this report."); }
+    catch { setError("Тайланг хуваалцахын тулд хөтчийн хаягийг хуулна уу."); }
   }
 
   function reset() {
@@ -87,76 +95,76 @@ export default function Home() {
 
   return (
     <main>
-      <nav className="topbar" aria-label="Primary navigation">
-        <button className="brand reset-button" onClick={reset} aria-label="UB Price Scout home"><span className="brand-mark">UB</span><span>Price Scout</span></button>
-        <div className="top-actions"><span className="market-status"><i /> Live retail check</span>{report && <button className="text-button" onClick={reset}>New scan</button>}</div>
+      <nav className="topbar" aria-label="Үндсэн цэс">
+        <button className="brand reset-button" onClick={reset} aria-label="УБ Үнэ Тандагч нүүр"><span className="brand-mark">УБ</span><span>Үнэ Тандагч</span></button>
+        <div className="top-actions"><span className="market-status"><i /> Дэлгүүрийн бодит үнэ</span>{report && <button className="text-button" onClick={reset}>Шинэ хайлт</button>}</div>
       </nav>
 
       {!report && <section className="hero" id="top">
-        <div className="eyebrow">Independent Ulaanbaatar price check</div>
-        <h1>Know the street price<br />before you buy.</h1>
-        <p className="hero-copy">One scan checks exact specifications, live prices, stock signals and source quality across Mongolia’s most useful online retailers.</p>
+        <div className="eyebrow">Улаанбаатарын хараат бус үнийн судалгаа</div>
+        <h1>Авахаасаа өмнө<br />бодит үнийг мэд.</h1>
+        <p className="hero-copy">Нэг хайлтаар Монголын онлайн дэлгүүрүүд дэх ижил үзүүлэлттэй барааны үнэ, үлдэгдэл болон эх сурвалжийн найдвартай байдлыг шалгана.</p>
 
         <form className="search-card" onSubmit={submit}>
-          <div className="input-tabs" aria-label="Input type">
-            <button type="button" aria-pressed={mode === "name"} onClick={() => setMode("name")}>Describe product</button>
-            <button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")}>I have a listing link</button>
+          <div className="input-tabs" aria-label="Оруулах мэдээллийн төрөл">
+            <button type="button" aria-pressed={mode === "name"} onClick={() => setMode("name")}>Бараагаа бичих</button>
+            <button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")}>Зарын холбоос оруулах</button>
           </div>
-          {mode === "link" && <div className="field"><label htmlFor="listing-url">Listing URL</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => setListingUrl(event.target.value)} placeholder="https://facebook.com/…" /></div>}
-          <div className="field"><label htmlFor="product-query">{mode === "link" ? "Exact product details" : "Product name and specifications"}</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Apple iPad 11 A16 256GB Wi‑Fi" autoComplete="off" /></div>
+          {mode === "link" && <div className="field"><label htmlFor="listing-url">Зарын холбоос</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => setListingUrl(event.target.value)} placeholder="https://facebook.com/…" /></div>}
+          <div className="field"><label htmlFor="product-query">{mode === "link" ? "Барааны дэлгэрэнгүй үзүүлэлт" : "Барааны нэр ба үзүүлэлт"}</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Apple iPad 11 A16 256GB Wi‑Fi" autoComplete="off" /></div>
           <div className="price-and-action">
-            <div className="field price-field"><label htmlFor="asking-price">Seller’s asking price <span>optional</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div>
-            <button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Checking stores…</> : <>Scan UB prices <span>→</span></>}</button>
+            <div className="field price-field"><label htmlFor="asking-price">Зарын үнэ <span>заавал биш</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div>
+            <button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Дэлгүүрүүдийг шалгаж байна…</> : <>УБ-ын үнийг хайх <span>→</span></>}</button>
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="example-row"><span>Try an example</span><button type="button" onClick={() => { setMode("name"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
+          <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { setMode("name"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
         </form>
 
-        <div className="source-strip" aria-label="What the scan checks"><span>CHECKING</span><b>Exact model</b><b>Storage</b><b>Connectivity</b><b>Stock</b><b>VAT notes</b></div>
+        <div className="source-strip" aria-label="Хайлт юуг шалгах вэ"><span>ШАЛГАХ ҮЗҮҮЛЭЛТ</span><b>Загвар</b><b>Багтаамж</b><b>Холболт</b><b>Үлдэгдэл</b><b>НӨАТ</b></div>
       </section>}
 
-      {!report && !loading && <section className="preview-panel" aria-label="How it works">
-        <div><span className="index">01</span><strong>Identify</strong><p>Model, capacity, connectivity and condition become the comparison fingerprint.</p></div>
-        <div><span className="index">02</span><strong>Compare</strong><p>Only like-for-like offers enter the fair-price range. Near matches stay separate.</p></div>
-        <div><span className="index">03</span><strong>Decide</strong><p>A clear verdict, linked evidence and freshness signals—nothing hidden.</p></div>
+      {!report && !loading && <section className="preview-panel" aria-label="Хэрхэн ажиллах вэ">
+        <div><span className="index">01</span><strong>Тодорхойлно</strong><p>Загвар, багтаамж, холболт болон төлөвөөр нь яг ижил барааг танина.</p></div>
+        <div><span className="index">02</span><strong>Харьцуулна</strong><p>Зөвхөн ижил үзүүлэлттэй саналуудыг бодит үнийн хүрээнд оруулж, төстэйг нь тусад нь харуулна.</p></div>
+        <div><span className="index">03</span><strong>Дүгнэнэ</strong><p>Тодорхой үнэлгээ, эх сурвалжийн холбоос болон шалгасан хугацааг ил тод харуулна.</p></div>
       </section>}
 
-      {loading && !report && <section className="loading-stage" aria-live="polite"><div className="radar"><span /><span /><i /></div><h2>Walking the digital shelves…</h2><p>Checking retailer search pages and separating exact matches from lookalikes.</p><div className="loading-sources"><span>Best Computers</span><span>iTStore</span><span>SEGU</span><span>PC Mall</span><span>iPick</span><span>TurboTech</span><span>+3 more</span></div></section>}
+      {loading && !report && <section className="loading-stage" aria-live="polite"><div className="radar"><span /><span /><i /></div><h2>Онлайн дэлгүүрүүдээр хайж байна…</h2><p>Дэлгүүрүүдийн хайлтын хуудсыг шалгаж, яг ижил болон төстэй барааг ялгаж байна.</p><div className="loading-sources"><span>Best Computers</span><span>iTStore</span><span>SEGU</span><span>PC Mall</span><span>iPick</span><span>TurboTech</span><span>+3 дэлгүүр</span></div></section>}
 
       {report && <section className="report" id="report">
         <header className="report-head">
-          <div><div className="eyebrow">Market report · {relativeTime(report.checkedAt)}</div><h2>{report.query}</h2><p>{sourceStats.checked} sources attempted · {sourceStats.reached} responded · {sourceStats.blocked} blocked or timed out</p></div>
-          <div className="report-actions">{report.listingUrl && <a href={report.listingUrl} target="_blank" rel="noreferrer">Original listing ↗</a>}<button onClick={shareReport} disabled={!reportId} title={reportId ? undefined : "This report could not be saved for sharing"}>{copied ? "Link copied ✓" : reportId ? "Share report" : "Sharing unavailable"}</button><button className="icon-action" onClick={() => window.print()} aria-label="Print report">↗</button></div>
+          <div><div className="eyebrow">Зах зээлийн тайлан · {relativeTime(report.checkedAt)}</div><h2>{report.query}</h2><p>{sourceStats.checked} эх сурвалж шалгасан · {sourceStats.reached} хариу өгсөн · {sourceStats.blocked} хандалт хаалттай эсвэл хугацаа хэтэрсэн</p></div>
+          <div className="report-actions">{report.listingUrl && <a href={report.listingUrl} target="_blank" rel="noreferrer">Эх зар ↗</a>}<button onClick={shareReport} disabled={!reportId} title={reportId ? undefined : "Энэ тайланг хуваалцахаар хадгалж чадсангүй"}>{copied ? "Холбоос хууллаа ✓" : reportId ? "Тайлан хуваалцах" : "Хуваалцах боломжгүй"}</button><button className="icon-action" onClick={() => window.print()} aria-label="Тайлан хэвлэх">↗</button></div>
         </header>
 
         <div className={`verdict-card verdict-${report.verdict}`}>
-          <div className="verdict-label">THE VERDICT</div>
-          <div className="verdict-main"><span className="verdict-word">{report.verdict === "great" ? "Great price" : report.verdict === "fair" ? "Fair price" : report.verdict === "high" ? "Priced high" : "More evidence needed"}</span><p>{report.verdict === "great" ? "This ask is meaningfully below the live exact-match midpoint." : report.verdict === "fair" ? "This ask sits inside a reasonable range for comparable live offers." : report.verdict === "high" ? "The asking price is above the live exact-match market range." : "No reliable live exact-match range was found. Open the checked sources below or refine the product details."}</p></div>
-          <div className="ask-block"><span>Your ask</span><strong>{money(report.targetPrice)}</strong>{report.targetPrice && report.median && <small>{report.targetPrice > report.median ? "+" : ""}{Math.round((report.targetPrice / report.median - 1) * 100)}% vs midpoint</small>}</div>
+          <div className="verdict-label">ҮНИЙН ДҮГНЭЛТ</div>
+          <div className="verdict-main"><span className="verdict-word">{report.verdict === "great" ? "Маш сайн үнэ" : report.verdict === "fair" ? "Боломжийн үнэ" : report.verdict === "high" ? "Өндөр үнэ" : "Нэмэлт мэдээлэл хэрэгтэй"}</span><p>{report.verdict === "great" ? "Энэ зарын үнэ ижил барааны одоогийн дундаж үнээс мэдэгдэхүйц хямд байна." : report.verdict === "fair" ? "Энэ зарын үнэ ижил барааны зах зээлийн боломжийн хүрээнд байна." : report.verdict === "high" ? "Энэ зарын үнэ ижил барааны одоогийн зах зээлийн хүрээнээс өндөр байна." : "Найдвартай, яг ижил барааны үнийн хүрээ олдсонгүй. Доорх эх сурвалжуудыг нээх эсвэл барааны үзүүлэлтийг нарийвчилна уу."}</p></div>
+          <div className="ask-block"><span>Зарын үнэ</span><strong>{money(report.targetPrice)}</strong>{report.targetPrice && report.median && <small>Дундаж үнээс {Math.abs(Math.round((report.targetPrice / report.median - 1) * 100))}% {report.targetPrice > report.median ? "өндөр" : "хямд"}</small>}</div>
         </div>
 
         <div className="metric-grid">
-          <div><span>LOWEST LIVE</span><strong>{money(report.low)}</strong><small>{report.exact[0]?.seller ?? "No exact match"}</small></div>
-          <div><span>MARKET MIDPOINT</span><strong>{money(report.median)}</strong><small>{report.exact.length} live exact {report.exact.length === 1 ? "match" : "matches"}</small></div>
-          <div><span>TOP OF RANGE</span><strong>{money(report.high)}</strong><small>Exact specification only</small></div>
+          <div><span>ХАМГИЙН ХЯМД</span><strong>{money(report.low)}</strong><small>{report.exact[0]?.seller ?? "Яг ижил бараа олдсонгүй"}</small></div>
+          <div><span>ЗАХ ЗЭЭЛИЙН ДУНДАЖ</span><strong>{money(report.median)}</strong><small>Яг ижил {report.exact.length} бодит санал</small></div>
+          <div><span>ХАМГИЙН ӨНДӨР</span><strong>{money(report.high)}</strong><small>Зөвхөн яг ижил үзүүлэлтээр</small></div>
         </div>
 
         <div className="results-layout">
           <div className="listings-column">
-            <div className="section-title"><div><span>LIVE COMPARABLES</span><h3>Exact matches</h3></div><span className="count-pill">{report.exact.length}</span></div>
-            {report.exact.length ? <div className="listing-table">{report.exact.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div> : <div className="empty-state"><div className="empty-mark">?</div><div><h3>No verified exact match surfaced</h3><p>Retailer pages can hide products behind scripts or block automated requests. The source ledger shows what responded; try a shorter model name or open searches directly.</p></div></div>}
+            <div className="section-title"><div><span>БОДИТ ҮНИЙН ХАРЬЦУУЛАЛТ</span><h3>Яг ижил бараа</h3></div><span className="count-pill">{report.exact.length}</span></div>
+            {report.exact.length ? <div className="listing-table">{report.exact.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div> : <div className="empty-state"><div className="empty-mark">?</div><div><h3>Баталгаатай, яг ижил бараа олдсонгүй</h3><p>Зарим дэлгүүр бараагаа скриптийн цаана нуух эсвэл автомат хандалтыг хаах боломжтой. Аль эх сурвалж хариу өгснийг баруун талын жагсаалтаас харна уу. Загварын нэрийг товчлох эсвэл хайлтын холбоосыг шууд нээгээрэй.</p></div></div>}
 
-            {!!report.near.length && <div className="near-section"><button className="near-toggle" onClick={() => setShowNear((value) => !value)} aria-expanded={showNear} aria-controls="near-match-results"><span><b>Near matches</b> · excluded from the verdict</span><span>{report.near.length} {showNear ? "−" : "+"}</span></button>{showNear && <div className="listing-table near-list" id="near-match-results">{report.near.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div>}</div>}
+            {!!report.near.length && <div className="near-section"><button className="near-toggle" onClick={() => setShowNear((value) => !value)} aria-expanded={showNear} aria-controls="near-match-results"><span><b>Төстэй бараа</b> · үнийн дүгнэлтэд ороогүй</span><span>{report.near.length} {showNear ? "−" : "+"}</span></button>{showNear && <div className="listing-table near-list" id="near-match-results">{report.near.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div>}</div>}
           </div>
 
           <aside className="source-ledger">
-            <div className="section-title"><div><span>EVIDENCE LOG</span><h3>Source ledger</h3></div></div>
-            <div className="ledger-list">{report.sources.map((source) => <a href={source.searchUrl} target="_blank" rel="noreferrer" key={source.seller}><span className={`source-dot state-${source.state}`} /><div><b>{source.seller}</b><small>{source.state === "found" ? `${source.listings.length} candidate${source.listings.length === 1 ? "" : "s"}` : source.state === "no_match" ? "Reached · no match" : source.state === "timed_out" ? "Timed out" : "Access limited"}</small></div><span>↗</span></a>)}</div>
-            <p className="ledger-note">Prices are evidence, not endorsements. Always confirm final price, VAT receipt, warranty and stock with the seller.</p>
+            <div className="section-title"><div><span>ЭХ СУРВАЛЖИЙН БҮРТГЭЛ</span><h3>Шалгасан дэлгүүрүүд</h3></div></div>
+            <div className="ledger-list">{report.sources.map((source) => <a href={source.searchUrl} target="_blank" rel="noreferrer" key={source.seller}><span className={`source-dot state-${source.state}`} /><div><b>{source.seller}</b><small>{source.state === "found" ? `${source.listings.length} боломжит бараа` : source.state === "no_match" ? "Хариу өгсөн · бараа олдоогүй" : source.state === "timed_out" ? "Хугацаа хэтэрсэн" : "Хандалт хязгаарлагдсан"}</small></div><span>↗</span></a>)}</div>
+            <p className="ledger-note">Эдгээр үнэ нь судалгааны баримт болохоос худалдан авах зөвлөмж биш. Эцсийн үнэ, НӨАТ-ын баримт, баталгаа болон үлдэгдлийг худалдагчаас заавал лавлаарай.</p>
           </aside>
         </div>
 
-        <footer className="report-footer"><div><span className="brand-mark">UB</span><b>Price Scout</b></div><p>{reportId ? `Report ${reportId} · ` : "Unsaved report · "}Generated {new Date(report.checkedAt).toLocaleString("en-GB", { timeZone: "Asia/Ulaanbaatar" })} ULAT</p><button onClick={reset}>Check another product →</button></footer>
+        <footer className="report-footer"><div><span className="brand-mark">УБ</span><b>Үнэ Тандагч</b></div><p>{reportId ? `Тайлан ${reportId} · ` : "Хадгалаагүй тайлан · "}{new Date(report.checkedAt).toLocaleString("mn-MN", { timeZone: "Asia/Ulaanbaatar" })} цагт үүсгэв</p><button onClick={reset}>Өөр бараа шалгах →</button></footer>
       </section>}
     </main>
   );
@@ -165,6 +173,6 @@ export default function Home() {
 function ListingRow({ item, rank }: { item: Listing; rank: number }) {
   let safeUrl: string | null = null;
   try { const parsed = new URL(item.url); safeUrl = parsed.protocol === "https:" ? parsed.toString() : null; } catch { safeUrl = null; }
-  const content = <><span className="rank">{String(rank).padStart(2, "0")}</span><div className="listing-copy"><b>{item.seller}</b><span>{item.title}</span><small><i className={`stock stock-${item.stock}`} /> {item.stock === "in_stock" ? "In stock" : item.stock === "out_of_stock" ? "Sold out" : "Stock unconfirmed"} · {item.confidence}% match</small></div><strong className="listing-price">{money(item.price)}</strong><span className="external">{safeUrl ? "↗" : ""}</span></>;
+  const content = <><span className="rank">{String(rank).padStart(2, "0")}</span><div className="listing-copy"><b>{item.seller}</b><span>{item.title}</span><small><i className={`stock stock-${item.stock}`} /> {item.stock === "in_stock" ? "Үлдэгдэлтэй" : item.stock === "out_of_stock" ? "Дууссан" : "Үлдэгдэл тодорхойгүй"} · {item.confidence}% тохирол</small></div><strong className="listing-price">{money(item.price)}</strong><span className="external">{safeUrl ? "↗" : ""}</span></>;
   return safeUrl ? <a className="listing-row" href={safeUrl} target="_blank" rel="noreferrer">{content}</a> : <div className="listing-row">{content}</div>;
 }
