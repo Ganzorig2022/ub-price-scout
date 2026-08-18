@@ -1,10 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { extractIntakeDraft, facebookListingUrl, type IntakeDraft } from "../lib/intake";
 
 type Listing = { seller: string; title: string; price: number; url: string; match: "exact" | "near"; stock: "in_stock" | "out_of_stock" | "unknown"; confidence: number; checkedAt: string; note?: string };
-type Source = { seller: string; searchUrl: string; state: "found" | "no_match" | "blocked" | "timed_out"; listings: Listing[] };
+type Source = { seller: string; searchUrl: string; state: "found" | "no_match" | "blocked" | "timed_out" | "unreadable"; listings: Listing[]; attemptedQueries?: string[] };
 type Report = { query: string; targetPrice: number | null; listingUrl: string | null; verdict: "great" | "fair" | "high" | "insufficient"; median: number | null; low: number | null; high: number | null; exact: Listing[]; near: Listing[]; sources: Source[]; checkedAt: string };
+type IntakeMode = "details" | "facebook_text" | "facebook_link";
 
 const EXAMPLE = "Apple iPad 11 A16 256GB Wi-Fi";
 
@@ -23,11 +25,16 @@ async function readJson<T>(response: Response, fallbackMessage: string): Promise
 }
 
 export default function Home() {
-  const [mode, setMode] = useState<"name" | "link">("name");
+  const [mode, setMode] = useState<IntakeMode>("facebook_text");
   const [query, setQuery] = useState("");
   const [listingUrl, setListingUrl] = useState("");
+  const [postText, setPostText] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftConfidence, setDraftConfidence] = useState(0);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [error, setError] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [reportId, setReportId] = useState("");
@@ -49,29 +56,86 @@ export default function Home() {
   }, []);
 
   const sourceStats = useMemo(() => {
-    if (!report) return { checked: 0, reached: 0, blocked: 0 };
+    if (!report) return { checked: 0, reached: 0, blocked: 0, unreadable: 0 };
     return {
       checked: report.sources.length,
       reached: report.sources.filter((source) => source.state === "found" || source.state === "no_match").length,
       blocked: report.sources.filter((source) => source.state === "blocked" || source.state === "timed_out").length,
+      unreadable: report.sources.filter((source) => source.state === "unreadable").length,
     };
   }, [report]);
+
+  function changeMode(next: IntakeMode) {
+    setMode(next); setError(""); setDraftReady(next === "details"); setDraftConfidence(0); setOcrProgress(0);
+    if (next !== "facebook_link") setListingUrl("");
+  }
+
+  function applyDraft(draft: IntakeDraft, url?: string) {
+    setQuery(draft.query);
+    setTargetPrice(draft.targetPrice ? String(draft.targetPrice) : "");
+    setDraftConfidence(draft.confidence);
+    setDraftReady(true);
+    if (url) setListingUrl(url);
+    setError(draft.query ? "" : "Барааны нэрийг автоматаар ялгаж чадсангүй. Доорх талбарт гараар оруулна уу.");
+  }
+
+  function extractFromText() {
+    if (postText.trim().length < 3) { setError("Facebook зарын текстийг оруулна уу."); return; }
+    applyDraft(extractIntakeDraft(postText));
+  }
+
+  async function extractFromUrl() {
+    setExtracting(true); setError("");
+    try {
+      const response = await fetch("/api/intake", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "url", listingUrl }) });
+      const payload = await readJson<{ draft?: IntakeDraft; listingUrl?: string; error?: string }>(response, "Facebook холбоосын хариуг уншиж чадсангүй.");
+      if (!response.ok || !payload.draft) throw new Error(payload.error ?? "Facebook зарыг уншиж чадсангүй.");
+      applyDraft(payload.draft, payload.listingUrl);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Facebook зарыг уншиж чадсангүй."); }
+    finally { setExtracting(false); }
+  }
+
+  async function readScreenshot(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 10_000_000) { setError("10MB-аас бага хэмжээтэй зураг сонгоно уу."); return; }
+    setExtracting(true); setError(""); setOcrProgress(1);
+    const workerState: { current: Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>> | null } = { current: null };
+    let timedOut = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const workerPromise = createWorker(["mon", "eng"], undefined, { logger: (message) => { if (typeof message.progress === "number") setOcrProgress(Math.max(1, Math.round(message.progress * 100))); } })
+        .then(async (created) => {
+          if (timedOut) { await created.terminate(); throw new Error("Зураг таних хугацаа хэтэрлээ. Дахин оролдоно уу."); }
+          workerState.current = created;
+          return created;
+        });
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => { timedOut = true; reject(new Error("Зураг таних хугацаа хэтэрлээ. Дахин оролдоно уу.")); }, 45_000);
+      });
+      const result = await Promise.race([workerPromise.then((created) => created.recognize(file)), timeout]);
+      const text = result.data.text.trim();
+      if (!text) throw new Error("Зургаас текст таньж чадсангүй. Зарын текстийг хуулж оруулна уу.");
+      setPostText(text);
+      applyDraft(extractIntakeDraft(text));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Дэлгэцийн зургаас текст уншиж чадсангүй."); }
+    finally { if (timeoutId) clearTimeout(timeoutId); if (workerState.current) await workerState.current.terminate().catch(() => undefined); setExtracting(false); setOcrProgress(0); }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const cleanQuery = query.trim();
     if (cleanQuery.length < 3) {
-      setError(mode === "link" ? "Дэлгүүрүүдийн үнийг зөв харьцуулахын тулд барааны бүтэн нэрийг оруулна уу." : "Барааны загвар болон гол үзүүлэлтүүдийг оруулна уу.");
+      setError("Барааны загвар болон гол үзүүлэлтүүдийг оруулна уу.");
       return;
     }
-    if (mode === "link") {
-      try { const parsed = new URL(listingUrl.trim()); if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error(); }
-      catch { setError("Нийтэд нээлттэй http эсвэл https холбоосыг бүтнээр нь оруулна уу."); return; }
+    if (mode === "facebook_link") {
+      if (!facebookListingUrl(listingUrl)) { setError("Нийтэд нээлттэй Facebook https холбоосыг бүтнээр нь оруулна уу."); return; }
     }
     setLoading(true); setError(""); setReport(null); setCopied(false);
     try {
       const numericPrice = Number(targetPrice.replace(/[^\d]/g, ""));
-      const response = await fetch("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: cleanQuery, targetPrice: numericPrice > 0 ? numericPrice : null, listingUrl: listingUrl.trim() || null }) });
+      const response = await fetch("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: cleanQuery, targetPrice: numericPrice > 0 ? numericPrice : null, listingUrl: mode === "facebook_link" ? listingUrl.trim() : null }) });
       const payload = await readJson<{ id: string | null; persisted: boolean; report: Report; error?: string }>(response, "Серверийн хариуг уншиж чадсангүй. Дахин оролдоно уу.");
       if (!response.ok) throw new Error(payload.error ?? "Үнийн хайлтыг гүйцээж чадсангүй.");
       setReport(payload.report); setReportId(payload.id ?? "");
@@ -88,7 +152,7 @@ export default function Home() {
   }
 
   function reset() {
-    setReport(null); setReportId(""); setError(""); setShowNear(false);
+    setReport(null); setReportId(""); setError(""); setShowNear(false); setDraftReady(mode === "details");
     window.history.replaceState({}, "", window.location.pathname);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -103,24 +167,22 @@ export default function Home() {
       {!report && <section className="hero" id="top">
         <div className="eyebrow">Улаанбаатарын хараат бус үнийн судалгаа</div>
         <h1>Авахаасаа өмнө<br />бодит үнийг мэд.</h1>
-        <p className="hero-copy">Нэг хайлтаар Монголын онлайн дэлгүүрүүд дэх ижил үзүүлэлттэй барааны үнэ, үлдэгдэл болон эх сурвалжийн найдвартай байдлыг шалгана.</p>
+        <p className="hero-copy">Facebook зарын текст, холбоос эсвэл дэлгэцийн зургаас барааг таньж, Монголын онлайн дэлгүүрүүдийн бодит үнэтэй харьцуулна.</p>
 
         <form className="search-card" onSubmit={submit}>
           <div className="input-tabs" aria-label="Оруулах мэдээллийн төрөл">
-            <button type="button" aria-pressed={mode === "name"} onClick={() => setMode("name")}>Бараагаа бичих</button>
-            <button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")}>Зарын холбоос оруулах</button>
+            <button type="button" aria-pressed={mode === "facebook_text"} onClick={() => changeMode("facebook_text")}>Facebook зар</button>
+            <button type="button" aria-pressed={mode === "facebook_link"} onClick={() => changeMode("facebook_link")}>Зарын холбоос</button>
+            <button type="button" aria-pressed={mode === "details"} onClick={() => changeMode("details")}>Бараагаа бичих</button>
           </div>
-          {mode === "link" && <div className="field"><label htmlFor="listing-url">Зарын холбоос</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => setListingUrl(event.target.value)} placeholder="https://facebook.com/…" /></div>}
-          <div className="field"><label htmlFor="product-query">{mode === "link" ? "Барааны дэлгэрэнгүй үзүүлэлт" : "Барааны нэр ба үзүүлэлт"}</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Apple iPad 11 A16 256GB Wi‑Fi" autoComplete="off" /></div>
-          <div className="price-and-action">
-            <div className="field price-field"><label htmlFor="asking-price">Зарын үнэ <span>заавал биш</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div>
-            <button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Дэлгүүрүүдийг шалгаж байна…</> : <>УБ-ын үнийг хайх <span>→</span></>}</button>
-          </div>
+          {mode === "facebook_text" && <div className="social-intake"><div className="field"><label htmlFor="post-text">Facebook зарын текст</label><textarea id="post-text" value={postText} onChange={(event) => { setPostText(event.target.value); setDraftReady(false); }} placeholder={'Жишээ:\nRedmi Pad 2 Pro 8/256GB\nЦоо шинэ, үнэ 1.9 сая₮'} rows={5} /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={extractFromText} disabled={extracting}>Текстээс мэдээлэл ялгах</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг уншуулах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Дэлгэцийн зураг таны төхөөрөмжөөс гарахгүй. Текст танилт хөтөч дотор ажиллана.</p></div>}
+          {mode === "facebook_link" && <div className="social-intake"><div className="field"><label htmlFor="listing-url">Нийтэд нээлттэй Facebook холбоос</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => { setListingUrl(event.target.value); setDraftReady(false); }} placeholder="https://facebook.com/…" /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={() => void extractFromUrl()} disabled={extracting}>{extracting ? "Уншиж байна…" : "Холбоосоос мэдээлэл авах"}</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг ашиглах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Facebook хаалттай бол зарын текст эсвэл дэлгэцийн зураг ашиглаарай.</p></div>}
+          {(mode === "details" || draftReady) && <div className={mode === "details" ? "confirmation-fields" : "draft-panel"}>{mode !== "details" && <div className="draft-head"><div><span>ТАНЬСАН МЭДЭЭЛЭЛ</span><b>Шалгаад засварлана уу</b></div><strong>{draftConfidence}%</strong></div>}<div className="field"><label htmlFor="product-query">Барааны нэр ба гол үзүүлэлт</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Xiaomi Redmi Pad 2 Pro 8GB 256GB" autoComplete="off" /></div><div className="price-and-action"><div className="field price-field"><label htmlFor="asking-price">Зарын үнэ <span>заавал биш</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div><button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Дэлгүүрүүдийг шалгаж байна…</> : <>УБ-ын үнийг хайх <span>→</span></>}</button></div></div>}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { setMode("name"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
+          <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { changeMode("details"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
         </form>
 
-        <div className="source-strip" aria-label="Хайлт юуг шалгах вэ"><span>ШАЛГАХ ҮЗҮҮЛЭЛТ</span><b>Загвар</b><b>Багтаамж</b><b>Холболт</b><b>Үлдэгдэл</b><b>НӨАТ</b></div>
+        <div className="source-strip" aria-label="Хайлт юуг шалгах вэ"><span>FACEBOOK → ЗАХ ЗЭЭЛ</span><b>Загвар</b><b>Багтаамж</b><b>Зарын үнэ</b><b>Үлдэгдэл</b><b>НӨАТ</b></div>
       </section>}
 
       {!report && !loading && <section className="preview-panel" aria-label="Хэрхэн ажиллах вэ">
@@ -133,7 +195,7 @@ export default function Home() {
 
       {report && <section className="report" id="report">
         <header className="report-head">
-          <div><div className="eyebrow">Зах зээлийн тайлан · {relativeTime(report.checkedAt)}</div><h2>{report.query}</h2><p>{sourceStats.checked} эх сурвалж шалгасан · {sourceStats.reached} хариу өгсөн · {sourceStats.blocked} хандалт хаалттай эсвэл хугацаа хэтэрсэн</p></div>
+          <div><div className="eyebrow">Зах зээлийн тайлан · {relativeTime(report.checkedAt)}</div><h2>{report.query}</h2><p>{sourceStats.checked} эх сурвалж шалгасан · {sourceStats.reached} хариу өгсөн · {sourceStats.unreadable} автоматаар уншигдаагүй · {sourceStats.blocked} хаалттай</p></div>
           <div className="report-actions">{report.listingUrl && <a href={report.listingUrl} target="_blank" rel="noreferrer">Эх зар ↗</a>}<button onClick={shareReport} disabled={!reportId} title={reportId ? undefined : "Энэ тайланг хуваалцахаар хадгалж чадсангүй"}>{copied ? "Холбоос хууллаа ✓" : reportId ? "Тайлан хуваалцах" : "Хуваалцах боломжгүй"}</button><button className="icon-action" onClick={() => window.print()} aria-label="Тайлан хэвлэх">↗</button></div>
         </header>
 
@@ -159,7 +221,7 @@ export default function Home() {
 
           <aside className="source-ledger">
             <div className="section-title"><div><span>ЭХ СУРВАЛЖИЙН БҮРТГЭЛ</span><h3>Шалгасан дэлгүүрүүд</h3></div></div>
-            <div className="ledger-list">{report.sources.map((source) => <a href={source.searchUrl} target="_blank" rel="noreferrer" key={source.seller}><span className={`source-dot state-${source.state}`} /><div><b>{source.seller}</b><small>{source.state === "found" ? `${source.listings.length} боломжит бараа` : source.state === "no_match" ? "Хариу өгсөн · бараа олдоогүй" : source.state === "timed_out" ? "Хугацаа хэтэрсэн" : "Хандалт хязгаарлагдсан"}</small></div><span>↗</span></a>)}</div>
+            <div className="ledger-list">{report.sources.map((source) => <a href={source.searchUrl} target="_blank" rel="noreferrer" key={source.seller}><span className={`source-dot state-${source.state}`} /><div><b>{source.seller}</b><small>{source.state === "found" ? `${source.listings.length} боломжит бараа` : source.state === "no_match" ? "Хариу өгсөн · бараа олдоогүй" : source.state === "unreadable" ? `Каталог автоматаар уншигдсангүй${source.attemptedQueries && source.attemptedQueries.length > 1 ? " · 2 хайлт" : ""}` : source.state === "timed_out" ? "Хугацаа хэтэрсэн" : "Хандалт хязгаарлагдсан"}</small></div><span>↗</span></a>)}</div>
             <p className="ledger-note">Эдгээр үнэ нь судалгааны баримт болохоос худалдан авах зөвлөмж биш. Эцсийн үнэ, НӨАТ-ын баримт, баталгаа болон үлдэгдлийг худалдагчаас заавал лавлаарай.</p>
           </aside>
         </div>

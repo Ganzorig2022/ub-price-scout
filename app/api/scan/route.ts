@@ -1,7 +1,8 @@
-import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { scans } from "../../../db/schema";
+import { facebookListingUrl, queryVariants } from "../../../lib/intake";
+import { consumeHourlyBudget } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,9 @@ type Listing = {
 type SourceResult = {
   seller: string;
   searchUrl: string;
-  state: "found" | "no_match" | "blocked" | "timed_out";
+  state: "found" | "no_match" | "blocked" | "timed_out" | "unreadable";
   listings: Listing[];
+  attemptedQueries?: string[];
 };
 
 type SourceDefinition = { seller: string; host: string; url: (query: string) => string; sitemaps?: string[] };
@@ -40,7 +42,7 @@ const SOURCES: SourceDefinition[] = [
   { seller: "Unegui", host: "www.unegui.mn", url: (q: string) => `https://www.unegui.mn/kompyuter-busad/?q=${q}` },
 ] as const;
 
-const IMPORTANT_TOKEN = /^(?:\d{2,4}(?:gb|tb)|wifi|wi-fi|cellular|lte|5g|a\d{1,2}|m\d|pro|max|plus|ultra|mini)$/i;
+const IMPORTANT_TOKEN = /^(?:\d{1,4}|\d{1,4}(?:gb|tb)|wifi|wi-fi|cellular|lte|5g|a\d{1,2}|m\d|pro|max|plus|ultra|mini)$/i;
 const PRICE_RE = /(?:₮|MNT|Үнэ[:\s]*)\s*([\d,. ]{5,15})|([\d,. ]{5,15})\s*(?:₮|MNT|төг(?:рөг)?)/gi;
 
 function cleanText(value: string) {
@@ -48,7 +50,7 @@ function cleanText(value: string) {
 }
 
 function tokens(value: string) {
-  return value.toLowerCase().replace(/wi[\s-]?fi/g, "wifi").match(/[a-zа-яөүё0-9]+/giu)?.filter((token) => token.length > 1) ?? [];
+  return value.toLowerCase().replace(/wi[\s-]?fi/g, "wifi").match(/[a-zа-яөүё0-9]+/giu)?.filter((token) => token.length > 1 || /^\d+$/.test(token)) ?? [];
 }
 
 function compareTitle(query: string, title: string): { match: MatchKind; confidence: number } | null {
@@ -204,11 +206,11 @@ async function sitemapCandidates(source: SourceDefinition, query: string) {
   return [...candidates.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([url]) => url);
 }
 
-async function scanSource(source: SourceDefinition, query: string): Promise<SourceResult> {
+async function scanSourceAttempt(source: SourceDefinition, query: string): Promise<SourceResult> {
   const searchUrl = source.url(encodeURIComponent(query));
   try {
     const response = await fetch(searchUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; UBPriceScout/1.0; public price research)", Accept: "text/html,application/xhtml+xml" }, redirect: "follow", signal: AbortSignal.timeout(7000) });
-    if (!response.ok) return { seller: source.seller, searchUrl, state: response.status === 403 || response.status === 429 ? "blocked" : "no_match", listings: [] };
+    if (!response.ok) return { seller: source.seller, searchUrl, state: response.status === 404 ? "no_match" : "blocked", listings: [] };
     const html = (await response.text()).slice(0, 900_000);
     let listings = parseListings(html, source.seller, response.url || searchUrl, query);
     if (!listings.length) {
@@ -216,10 +218,24 @@ async function scanSource(source: SourceDefinition, query: string): Promise<Sour
       if (!links.length) links = await sitemapCandidates(source, query);
       listings = await fetchProductPages(links, source.seller, query);
     }
-    return { seller: source.seller, searchUrl, state: listings.length ? "found" : "no_match", listings };
+    return { seller: source.seller, searchUrl, state: listings.length ? "found" : "unreadable", listings };
   } catch (error) {
     return { seller: source.seller, searchUrl, state: error instanceof Error && error.name === "TimeoutError" ? "timed_out" : "blocked", listings: [] };
   }
+}
+
+async function scanSource(source: SourceDefinition, query: string): Promise<SourceResult> {
+  const variants = queryVariants(query).slice(0, 2);
+  const attemptedQueries: string[] = [];
+  let fallback: SourceResult | null = null;
+  for (const variant of variants) {
+    attemptedQueries.push(variant);
+    const result = await scanSourceAttempt(source, variant);
+    fallback ??= result;
+    if (result.state === "found") return { ...result, searchUrl: source.url(encodeURIComponent(query)), attemptedQueries };
+    if (result.state === "blocked" || result.state === "timed_out") return { ...result, searchUrl: source.url(encodeURIComponent(query)), attemptedQueries };
+  }
+  return { ...(fallback ?? { seller: source.seller, searchUrl: source.url(encodeURIComponent(query)), state: "unreadable" as const, listings: [] }), searchUrl: source.url(encodeURIComponent(query)), attemptedQueries };
 }
 
 function summarize(query: string, targetPrice: number | null, listingUrl: string | null, sourceResults: SourceResult[]) {
@@ -243,33 +259,17 @@ function validPayload(value: unknown): { query: string; targetPrice: number | nu
   const targetPrice = typeof raw.targetPrice === "number" && Number.isFinite(raw.targetPrice) && raw.targetPrice > 0 ? Math.round(raw.targetPrice) : null;
   let listingUrl: string | null = null;
   if (typeof raw.listingUrl === "string" && raw.listingUrl.trim()) {
-    try { const parsed = new URL(raw.listingUrl.trim().slice(0, 1000)); listingUrl = parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null; } catch { return null; }
+    const parsed = facebookListingUrl(raw.listingUrl);
+    if (!parsed) return null;
+    listingUrl = parsed.toString();
   }
   return query.length >= 3 ? { query, targetPrice, listingUrl } : null;
-}
-
-async function rateLimit(request: Request) {
-  try {
-    const fingerprint = "global-hourly-scan-budget";
-    const bucket = Math.floor(Date.now() / 3_600_000);
-    const result = await env.DB.prepare(`
-      INSERT INTO scan_limits (fingerprint, bucket, count)
-      VALUES (?, ?, 1)
-      ON CONFLICT(fingerprint) DO UPDATE SET
-        bucket = excluded.bucket,
-        count = CASE WHEN scan_limits.bucket = excluded.bucket THEN scan_limits.count + 1 ELSE 1 END
-      RETURNING count
-    `).bind(fingerprint, bucket).first<{ count: number }>();
-    return (result?.count ?? 1) <= 60 ? "allowed" : "limited";
-  } catch {
-    return new URL(request.url).hostname === "localhost" ? "allowed" : "unavailable";
-  }
 }
 
 export async function POST(request: Request) {
   const payload = validPayload(await request.json().catch(() => null));
   if (!payload) return Response.json({ error: "Барааг тодорхойлсон гурваас доошгүй тэмдэгт оруулна уу." }, { status: 400 });
-  const limit = await rateLimit(request);
+  const limit = await consumeHourlyBudget(request, "global-hourly-scan-budget", 60);
   if (limit === "limited") return Response.json({ error: "Энэ цагийн бодит үнийн хайлтын хязгаар дууслаа. Хадгалсан тайлан болон дэлгүүрийн холбоосууд нээлттэй хэвээр байна. Дараагийн цагт дахин оролдоно уу." }, { status: 429, headers: { "retry-after": "3600" } });
   if (limit === "unavailable") return Response.json({ error: "Аюулгүйн хязгаар шинэчлэгдэж байгаа тул бодит үнийн хайлт түр боломжгүй байна. Удахгүй дахин оролдоно уу." }, { status: 503, headers: { "retry-after": "120" } });
   const results = await Promise.all(SOURCES.map((source) => scanSource(source, payload.query)));

@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "УБ Үнэ Тандагч — Бодит зах зээлийн үнийг шалга";
-  const description = "Худалдан авахаасаа өмнө Монголын дэлгүүрүүдийн яг ижил барааны үнийг харьцуулаарай.";
+  const description = "Facebook зарын бараа, үнийг таньж Улаанбаатарын дэлгүүрүүдийн бодит үнэтэй харьцуулна.";
   return {
     title,
     description,

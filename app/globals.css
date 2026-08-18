@@ -15,9 +15,9 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body), sans-serif; }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #1577ff; outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #1577ff; outline-offset: 3px; }
 main { min-height: 100vh; overflow: hidden; }
 
 .topbar { height: 76px; padding: 0 clamp(20px, 5vw, 76px); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: rgba(241,240,232,.92); backdrop-filter: blur(12px); position: relative; z-index: 10; }
@@ -44,9 +44,25 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
 .field + .field { margin-top: 15px; }
 .field label { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; }
 .field label span { color: var(--muted); font-weight: 500; text-transform: lowercase; letter-spacing: 0; }
-.field > input, .money-input { width: 100%; min-width: 0; border: 1px solid var(--line); background: #f7f7f2; }
-.field > input { padding: 16px; outline: none; }
-.field > input:focus, .money-input:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.field > input, .field > textarea, .money-input { width: 100%; min-width: 0; border: 1px solid var(--line); background: #f7f7f2; }
+.field > input, .field > textarea { padding: 16px; outline: none; }
+.field > textarea { resize: vertical; min-height: 128px; line-height: 1.5; }
+.field > input:focus, .field > textarea:focus, .money-input:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.social-intake { animation: reveal .25s ease-out both; }
+.intake-actions { display: flex; gap: 9px; margin-top: 12px; }
+.extract-button, .upload-button { min-height: 43px; border: 1px solid var(--ink); padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; font-weight: 750; cursor: pointer; }
+.extract-button { background: var(--acid); }
+.upload-button { background: #e5e5dd; }
+.upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.extract-button:disabled, .upload-button:has(input:disabled) { cursor: wait; opacity: .65; }
+.privacy-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.draft-panel { border: 1px dashed var(--ink); background: #f8f8f2; padding: 17px; margin-top: 18px; animation: reveal .3s ease-out both; }
+.draft-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.draft-head > div { display: flex; flex-direction: column; gap: 3px; }
+.draft-head span { font-size: 9px; letter-spacing: .13em; font-weight: 800; }
+.draft-head b { font-family: var(--font-display), serif; font-size: 23px; font-weight: 400; }
+.draft-head > strong { width: 48px; height: 48px; border: 1px solid var(--ink); border-radius: 50%; display: grid; place-items: center; background: var(--acid); font-size: 12px; }
+.confirmation-fields { animation: reveal .2s ease-out both; }
 .price-and-action { display: grid; grid-template-columns: minmax(210px, .65fr) minmax(230px, .35fr); gap: 10px; margin-top: 15px; align-items: end; }
 .money-input { display: flex; align-items: center; }
 .money-input input { min-width: 0; width: 100%; border: 0; background: none; padding: 16px; outline: none; }
@@ -139,6 +155,7 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
 .state-found { background: var(--green); box-shadow: 0 0 0 3px #2cb86620; }
 .state-blocked { background: var(--red); }
 .state-timed_out { background: #e69a27; }
+.state-unreadable { background: #8a63d2; }
 .ledger-list div { display: flex; flex-direction: column; }
 .ledger-list b { font-size: 13px; }
 .ledger-list small { color: var(--muted); margin-top: 3px; }
@@ -172,6 +189,8 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
   .search-card { padding: 17px; box-shadow: 6px 6px 0 var(--ink); }
   .input-tabs { margin: -17px -17px 18px; }
   .input-tabs button { padding: 12px 8px; font-size: 12px; }
+  .intake-actions { display: grid; grid-template-columns: 1fr; }
+  .extract-button, .upload-button { width: 100%; }
   .price-and-action { grid-template-columns: 1fr; }
   .scan-button { height: 54px; }
   .source-strip { row-gap: 10px; }
