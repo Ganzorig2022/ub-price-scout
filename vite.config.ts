@@ -11,15 +11,22 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
+// Self-hosting on a plain Cloudflare account: set D1_DATABASE_ID (and optionally
+// D1_DATABASE_NAME) at build time so `wrangler deploy` binds the real database.
+// Without them the Sites placeholder is kept, which only the Sites control plane resolves.
+const d1DatabaseId = process.env.D1_DATABASE_ID || SITE_CREATOR_PLACEHOLDER_DATABASE_ID;
+const d1DatabaseName = process.env.D1_DATABASE_NAME || "site-creator-d1";
+
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  images: { binding: "IMAGES" },
   d1_databases: d1
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: d1DatabaseName,
+          database_id: d1DatabaseId,
         },
       ]
     : [],

@@ -51,4 +51,16 @@ npm test
 
 ## Deployment
 
-Апп Vinext/Cloudflare Workers, D1, Drizzle болон OpenAI Sites hosting ашиглана. `.openai/hosting.json` дахь Sites project болон D1 binding-г өөрчлөхгүйгээр build archive-д migrations багтана.
+Апп Vinext/Cloudflare Workers, D1, Drizzle ашиглана. Хоёр зам:
+
+**Өөрийн Cloudflare account (одоогийн live зам).** D1 database нэг удаа үүсгээд migrations-ийг гараар ажиллуулна, дараа нь build-ийн үед database id-г өгч deploy хийнэ:
+
+```bash
+npx wrangler d1 create ub-price-scout
+npx wrangler d1 execute ub-price-scout --remote --file drizzle/0000_huge_grey_gargoyle.sql
+npx wrangler d1 execute ub-price-scout --remote --file drizzle/0001_past_psynapse.sql
+D1_DATABASE_ID=<id> D1_DATABASE_NAME=ub-price-scout npm run build
+npx wrangler deploy
+```
+
+**OpenAI Sites (хуучин зам).** `.openai/hosting.json` дахь project болон D1 binding-г өөрчлөхгүйгээр `sites` remote руу push хийнэ; database id-г Sites control plane өөрөө тавина.
