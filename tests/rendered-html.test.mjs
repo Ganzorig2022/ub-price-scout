@@ -113,26 +113,23 @@ test("rejects oversized intake bodies without relying on Content-Length", async 
 });
 
 test("ships persistence, PWA sharing, and a bounded source registry", async () => {
-  const [hosting, initialMigration, limitMigration, route, intakeRoute, matching, manifestText] = await Promise.all([
+  const [hosting, initialMigration, limitMigration, route, intakeRoute, shared, manifestText] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_huge_grey_gargoyle.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_past_psynapse.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/scan/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/intake/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../lib/matching.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/sources/shared.ts", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
   ]);
+  const { SOURCES } = await import("../lib/sources/index.ts");
   assert.match(hosting, /"d1": "DB"/);
   assert.match(initialMigration, /CREATE TABLE `scans`/);
   assert.match(initialMigration, /idx_scans_created_at/);
   assert.match(limitMigration, /CREATE TABLE `scan_limits`/);
-  assert.match(route, /Best Computers/);
-  assert.match(route, /Unegui/);
-  assert.match(route, /AbortSignal\.timeout\(7000\)/);
-  assert.match(matching, /importantHit === important\.length/);
-  assert.match(matching, /identityHit/);
-  assert.match(route, /queryVariants\(query\)/);
-  assert.match(route, /"unreadable"/);
+  assert.match(route, /scanAll\(payload\.query\)/);
+  assert.match(shared, /AbortSignal\.timeout\(options\.timeoutMs \?\? 7000\)/);
+  assert.ok(SOURCES.some((s) => s.seller === "Best Computers") && SOURCES.some((s) => s.seller === "Unegui"));
   assert.match(intakeRoute, /draft\.confidence < 70/);
   assert.match(intakeRoute, /global-hourly-facebook-intake-budget/);
   assert.match(intakeRoute, /MAX_REQUEST_BYTES/);

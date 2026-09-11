@@ -238,7 +238,7 @@ export default function Home() {
         <div><span className="index">03</span><strong>Дүгнэнэ</strong><p>Тодорхой үнэлгээ, эх сурвалжийн холбоос болон шалгасан хугацааг ил тод харуулна.</p></div>
       </section>}
 
-      {loading && !report && <section className="loading-stage" aria-live="polite"><div className="radar"><span /><span /><i /></div><h2>Онлайн дэлгүүрүүдээр хайж байна…</h2><p>Дэлгүүрүүдийн хайлтын хуудсыг шалгаж, яг ижил болон төстэй барааг ялгаж байна.</p><div className="loading-sources"><span>Best Computers</span><span>iTStore</span><span>SEGU</span><span>PC Mall</span><span>iPick</span><span>TurboTech</span><span>+3 дэлгүүр</span></div></section>}
+      {loading && !report && <section className="loading-stage" aria-live="polite"><div className="radar"><span /><span /><i /></div><h2>Онлайн дэлгүүрүүдээр хайж байна…</h2><p>Дэлгүүрүүдийн хайлтын хуудсыг шалгаж, яг ижил болон төстэй барааг ялгаж байна.</p><div className="loading-sources"><span>Best Computers</span><span>iTStore</span><span>PC Mall</span><span>SEGU</span><span>BedRock</span><span>iPick</span><span>x86</span><span>+8 дэлгүүр</span></div></section>}
 
       {report && <section className="report" id="report">
         <header className="report-head">
