@@ -12,7 +12,7 @@
     "test": "npm run build && npm run test:unit && node --experimental-strip-types --no-warnings --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "test:unit": "node --experimental-strip-types --no-warnings --test tests/sources.test.mjs"
+    "test:unit": "node --experimental-strip-types --no-warnings --test tests/sources.test.mjs tests/facebook-collect.test.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

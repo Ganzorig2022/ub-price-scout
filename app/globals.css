@@ -249,3 +249,44 @@ h1 { font-family: var(--font-display), serif; font-size: clamp(58px, 9vw, 132px)
   .verdict-card { box-shadow: none; }
   a { break-inside: avoid; }
 }
+
+/* Facebook group collector: bookmarklet install + collected second-hand leads */
+.collector { max-width: 970px; margin: 26px 0 0; border: 1px solid var(--ink); background: var(--white); box-shadow: 6px 6px 0 var(--ink); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; padding: 18px 20px; align-items: center; }
+.collector > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.collector .eyebrow { transform: rotate(-2deg); align-self: flex-start; background: #1877f2; color: var(--white); border-color: var(--ink); }
+.collector h3 { font-family: var(--font-display), serif; font-size: 26px; font-weight: 400; line-height: 1.05; margin: 8px 0 0; }
+.collector p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 560px; }
+.collector ol { margin: 8px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; color: #444c44; }
+.bookmarklet { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--ink); background: var(--acid); padding: 14px 18px; font-weight: 800; color: inherit; text-decoration: none; cursor: grab; white-space: nowrap; box-shadow: 4px 4px 0 var(--ink); transform: rotate(1.5deg); }
+.bookmarklet:active { cursor: grabbing; }
+.bookmarklet small { font-weight: 600; color: #3c463c; font-size: 10px; }
+.leads-inbox { max-width: 970px; margin: 24px 0 0; border: 1px solid var(--ink); background: #e9eef8; box-shadow: 6px 6px 0 var(--ink); animation: reveal .3s ease-out both; }
+.leads-inbox-head { padding: 17px 20px 14px; border-bottom: 1px solid var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.leads-inbox-head > div { display: flex; flex-direction: column; }
+.leads-inbox-head span { font-size: 9px; letter-spacing: .13em; font-weight: 800; color: var(--muted); }
+.leads-inbox-head h3 { font: 400 27px/1 var(--font-display), serif; margin: 6px 0 0; }
+.leads-inbox-head > b { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--ink); background: #1877f2; color: var(--white); font-size: 12px; }
+.leads-inbox > p { margin: 0; padding: 12px 20px; font-size: 11px; line-height: 1.5; color: var(--muted); border-bottom: 1px solid var(--line); }
+.lead-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 14px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.lead-row:last-child { border-bottom: 0; }
+.lead-row > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lead-row b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-row small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-row strong { font-size: 16px; white-space: nowrap; }
+.lead-row .lead-actions { flex-direction: row; gap: 7px; }
+.lead-row .lead-actions a, .lead-row .lead-actions button { color: inherit; text-decoration: none; border: 1px solid var(--ink); background: var(--white); padding: 7px 9px; font-size: 10px; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.lead-row .lead-actions button { background: var(--acid); }
+.lead-row .lead-actions a:hover, .lead-row .lead-actions button:hover { transform: translate(-1px,-1px); box-shadow: 2px 2px 0 var(--ink); }
+.lead-band { display: grid; grid-template-columns: repeat(3,1fr); border-bottom: 1px solid var(--line); background: var(--white); }
+.lead-band > div { padding: 14px 20px; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.lead-band > div:last-child { border: 0; }
+.lead-band span { font-size: 9px; letter-spacing: .13em; font-weight: 800; color: var(--muted); }
+.lead-band strong { font-size: clamp(19px, 2.4vw, 26px); margin-top: 6px; }
+@media (max-width: 720px) {
+  .collector { grid-template-columns: 1fr; }
+  .bookmarklet { justify-self: start; white-space: normal; flex-wrap: wrap; transform: none; }
+  .lead-row { grid-template-columns: minmax(0,1fr) auto; }
+  .lead-row .lead-actions { grid-column: 1 / -1; }
+  .lead-band { grid-template-columns: 1fr; }
+  .lead-band > div { border-right: 0; border-bottom: 1px solid var(--line); }
+}

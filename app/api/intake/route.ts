@@ -108,7 +108,7 @@ export async function POST(request: Request) {
 
   const url = facebookListingUrl(body.listingUrl);
   if (!url) return Response.json({ error: "Зөвхөн нийтэд нээлттэй Facebook https холбоос оруулна уу." }, { status: 400 });
-  const limit = await consumeHourlyBudget(request, "global-hourly-facebook-intake-budget", 120);
+  const limit = await consumeHourlyBudget(request, "facebook-intake", 40, 400);
   if (limit === "limited") return Response.json({ error: "Facebook холбоос унших цагийн хязгаар дууслаа. Зарын текст эсвэл дэлгэцийн зураг ашиглана уу." }, { status: 429, headers: { "retry-after": "3600" } });
   if (limit === "unavailable") return Response.json({ error: "Аюулгүйн хязгаар шинэчлэгдэж байна. Зарын текст эсвэл дэлгэцийн зураг ашиглана уу." }, { status: 503, headers: { "retry-after": "120" } });
   try {

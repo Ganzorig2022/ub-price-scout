@@ -69,18 +69,24 @@ export function extractAskingPrice(text: string): number | null {
   return candidates[0]?.value ?? null;
 }
 
+// `\b` only knows Latin letters, even with the `u` flag, so Cyrillic words need explicit boundaries.
+// Both cases are listed: the phone regex below has no `i` flag, and a class must not depend on one.
+const WORD = "[a-zA-Zа-яА-ЯөүёӨҮЁ0-9]";
+const AD_WORDS = /(?<![a-zA-Zа-яА-ЯөүёӨҮЁ0-9])(?:зарна|зарж байна|худалдана|худалдаалж байна|солино|яаралтай|цоо шинэ|шинэ|хуучин|бэлэн|хямд|баталгаатай|баталгаагүй|хайрцагтай|хайрцаггүй|хэрэглэсэн|гэрээтэй|гэрээгүй|sealed|brand new|new|used)(?![a-zA-Zа-яА-ЯөүёӨҮЁ0-9])/giu;
+
 function cleanCandidate(value: string) {
   return value
     .replace(/https?:\/\/\S+/gi, " ")
-    .replace(/(?:\+?976[-\s]?)?\b\d{8}\b/g, " ")
+    .replace(new RegExp(`(?:\\+?976[-\\s]?)?(?<!${WORD})\\d{8}(?!${WORD})`, "gu"), " ")
     .replace(/[#•●▪]/gu, " ")
     .replace(/\p{Extended_Pictographic}/gu, " ")
-    .replace(/\b(?:зарна|зарж байна|худалдана|шинэ|цоо шинэ|sealed|brand new|бэлэн)\b/giu, " ")
+    .replace(AD_WORDS, " ")
     .replace(/(?:үнэ|price)\s*[:：-]?\s*\d[\d\s,.]*(?:₮|төг(?:рөг)?|mnt|сая|say|million|мянга|мян|k)?/giu, " ")
     .replace(/\d[\d\s,.]*(?:₮|төг(?:рөг)?|mnt|сая|say|million)(?![a-zа-яөүё])/giu, " ")
     .replace(/₮/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/^[\s:–—-]+|[\s:–—-]+$/g, "")
+    .replace(/\s+([,.;])/g, "$1")
+    .replace(/^[\s:,.;–—-]+|[\s:,.;–—-]+$/g, "")
     .trim();
 }
 

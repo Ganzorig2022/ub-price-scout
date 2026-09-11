@@ -131,7 +131,7 @@ test("ships persistence, PWA sharing, and a bounded source registry", async () =
   assert.match(shared, /AbortSignal\.timeout\(options\.timeoutMs \?\? 7000\)/);
   assert.ok(SOURCES.some((s) => s.seller === "Best Computers") && SOURCES.some((s) => s.seller === "Unegui"));
   assert.match(intakeRoute, /draft\.confidence < 70/);
-  assert.match(intakeRoute, /global-hourly-facebook-intake-budget/);
+  assert.match(intakeRoute, /consumeHourlyBudget\(request, "facebook-intake", \d+, \d+\)/);
   assert.match(intakeRoute, /MAX_REQUEST_BYTES/);
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.share_target.action, "/share");

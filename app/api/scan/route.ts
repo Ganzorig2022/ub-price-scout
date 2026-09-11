@@ -25,8 +25,9 @@ function validPayload(value: unknown): { query: string; targetPrice: number | nu
 export async function POST(request: Request) {
   const payload = validPayload(await request.json().catch(() => null));
   if (!payload) return Response.json({ error: "Барааг тодорхойлсон гурваас доошгүй тэмдэгт оруулна уу." }, { status: 400 });
-  const limit = await consumeHourlyBudget(request, "global-hourly-scan-budget", 60);
-  if (limit === "limited") return Response.json({ error: "Энэ цагийн бодит үнийн хайлтын хязгаар дууслаа. Хадгалсан тайлан болон дэлгүүрийн холбоосууд нээлттэй хэвээр байна. Дараагийн цагт дахин оролдоно уу." }, { status: 429, headers: { "retry-after": "3600" } });
+  // 20 scans an hour per visitor, 400 an hour for the whole site (each scan fans out to 15 stores).
+  const limit = await consumeHourlyBudget(request, "scan", 20, 400);
+  if (limit === "limited") return Response.json({ error: "Таны энэ цагийн бодит үнийн хайлтын хязгаар дууслаа. Хадгалсан тайлан болон дэлгүүрийн холбоосууд нээлттэй хэвээр байна. Дараагийн цагт дахин оролдоно уу." }, { status: 429, headers: { "retry-after": "3600" } });
   if (limit === "unavailable") return Response.json({ error: "Аюулгүйн хязгаар шинэчлэгдэж байгаа тул бодит үнийн хайлт түр боломжгүй байна. Удахгүй дахин оролдоно уу." }, { status: 503, headers: { "retry-after": "120" } });
   const results = await scanAll(payload.query);
   const report = summarize(payload.query, payload.targetPrice, payload.listingUrl, results);

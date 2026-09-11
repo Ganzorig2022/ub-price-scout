@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { bookmarkletHref, parseCollectedLeads, readOrCreateCollectorToken, summarizeLeads, type CollectedLead } from "../lib/facebook-collect";
 import { extractIntakeDraft, extractSharedIntake, extractSharedPayload, facebookListingUrl, type IntakeDraft } from "../lib/intake";
 
 type Listing = { seller: string; title: string; price: number; url: string; match: "exact" | "near"; stock: "in_stock" | "out_of_stock" | "unknown"; confidence: number; checkedAt: string; note?: string };
@@ -43,21 +44,44 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [showNear, setShowNear] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [leads, setLeads] = useState<CollectedLead[]>([]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let storedPayload: unknown = null;
     try {
       const stored = window.sessionStorage.getItem("ub-price-scout-share");
-      window.sessionStorage.removeItem("ub-price-scout-share");
       if (stored) storedPayload = JSON.parse(stored);
     } catch {
       storedPayload = null;
+    }
+    // Removed only once the state update actually runs, so a Strict Mode trial mount (whose frame is cancelled) cannot eat the payload.
+    const consumeShared = () => { try { window.sessionStorage.removeItem("ub-price-scout-share"); } catch { /* storage unavailable */ } };
+    // Posts collected by the Facebook group bookmarklet arrive through the same share page. They stay in this tab only.
+    // Only this browser's own bookmarklet knows the token; a form posted by some other site does not.
+    const sharedLeads = storedPayload as { leads?: unknown; token?: unknown; leadsError?: unknown } | null;
+    if (sharedLeads?.leadsError) {
+      window.history.replaceState({}, "", window.location.pathname);
+      const frame = requestAnimationFrame(() => { consumeShared(); setError(sharedLeads.leadsError === "too_large" ? "Цуглуулсан зарын хэмжээ хэт их байна. Цөөн пост харагдах хуудсан дээр дахин оролдоно уу." : "Цуглуулсан зарын өгөгдөл уншигдсангүй. Хавчуургаа дахин чирж суулгаад оролдоно уу."); });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (sharedLeads?.leads) {
+      let trusted = false;
+      try { trusted = typeof sharedLeads.token === "string" && sharedLeads.token === window.localStorage.getItem("ub-price-scout-collector-token"); } catch { trusted = false; }
+      const collected = trusted ? parseCollectedLeads(sharedLeads.leads) : [];
+      window.history.replaceState({}, "", window.location.pathname);
+      const frame = requestAnimationFrame(() => {
+        consumeShared();
+        if (collected.length) { setLeads(collected); setMode("details"); setDraftReady(true); }
+        else setError(trusted ? "Цуглуулсан постуудаас зар, үнэ, холбоос ялгаж чадсангүй. Группийн хайлтын үр дүн дээр дахин оролдоно уу." : "Цуглуулсан зарын эх сурвалж баталгаажсангүй. Доорх хавчуургыг дахин чирж суулгаад ашиглана уу.");
+      });
+      return () => cancelAnimationFrame(frame);
     }
     const shared = extractSharedPayload(storedPayload) ?? extractSharedIntake(window.location.search);
     if (shared) {
       window.history.replaceState({}, "", window.location.pathname);
       const frame = requestAnimationFrame(() => {
+        consumeShared();
         setMode(shared.listingUrl ? "facebook_link" : "facebook_text");
         setListingUrl(shared.listingUrl);
         setPostText(shared.postText);
@@ -197,6 +221,14 @@ export default function Home() {
     }
   }
 
+  function applyLead(lead: CollectedLead) {
+    changeMode("details");
+    setQuery(lead.query);
+    setTargetPrice(lead.price ? String(lead.price) : "");
+    // The input only exists once the mode change has committed.
+    requestAnimationFrame(() => document.getElementById("product-query")?.focus());
+  }
+
   function reset() {
     setReport(null); setReportId(""); setError(""); setShowNear(false); setDraftReady(mode === "details");
     window.history.replaceState({}, "", window.location.pathname);
@@ -228,6 +260,14 @@ export default function Home() {
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { changeMode("details"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
         </form>
+
+        {!!leads.length && <section className="leads-inbox" aria-labelledby="leads-inbox-title">
+          <div className="leads-inbox-head"><div><span>FACEBOOK ГРУППЭЭС ЦУГЛУУЛСАН · ЗӨВХӨН ЭНЭ ТАБ ДЭЭР</span><h3 id="leads-inbox-title">Цуглуулсан зарууд</h3></div><b>{leads.length}</b></div>
+          <p>Эдгээр зар таны хөтчөөс ирсэн бөгөөд серверт хадгалагдахгүй. Нэгийг нь сонгоод дэлгүүрийн үнэтэй харьцуулна уу; хайлтын дараа ижил барааны 2-р гар үнийн хүрээг тусад нь харуулна.</p>
+          <div>{leads.map((lead) => <div className="lead-row" key={lead.url}><div><b>{lead.query || lead.excerpt}</b><small>{lead.excerpt}</small></div><strong>{money(lead.price)}</strong><div className="lead-actions"><button type="button" onClick={() => applyLead(lead)}>Энэ барааг шалгах</button><a href={lead.url} target="_blank" rel="noreferrer">Пост ↗</a></div></div>)}</div>
+        </section>}
+
+        <Collector />
 
         <div className="source-strip" aria-label="Хайлт юуг шалгах вэ"><span>FACEBOOK → ЗАХ ЗЭЭЛ</span><b>Загвар</b><b>Багтаамж</b><b>Зарын үнэ</b><b>Үлдэгдэл</b><b>НӨАТ</b></div>
       </section>}
@@ -265,6 +305,8 @@ export default function Home() {
 
             {!!report.near.length && <div className="near-section"><button className="near-toggle" onClick={() => setShowNear((value) => !value)} aria-expanded={showNear} aria-controls="near-match-results"><span><b>Төстэй бараа</b> · үнийн дүгнэлтэд ороогүй</span><span>{report.near.length} {showNear ? "−" : "+"}</span></button>{showNear && <div className="listing-table near-list" id="near-match-results">{report.near.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div>}</div>}
 
+            {!!leads.length && <SecondHandBand leads={leads} query={report.query} />}
+
             {!!report.facebookLeads?.length && <section className="facebook-leads" aria-labelledby="facebook-leads-title"><div className="facebook-leads-head"><div><span>FACEBOOK СЭЖИМ · ГАРААР ШАЛГАНА</span><h3 id="facebook-leads-title">Facebook худалдааны постууд</h3></div><b>{report.facebookLeads.length}</b></div><p>Facebook хайлтын үр дүнг таны нэвтэрсэн төхөөрөмж дээр нээнэ. Эдгээр нь автоматаар баталгаажсан үнэ биш бөгөөд зах зээлийн дундажт ороогүй.</p><div className="facebook-lead-list">{report.facebookLeads.map((lead) => <div className="facebook-lead-row" key={lead.seller}><div><i /> <b>{lead.seller}</b><small>Баталгаажаагүй Facebook сэжим</small></div><div><a href={lead.searchUrl} target="_blank" rel="noreferrer">Пост хайх ↗</a><a href={lead.pageUrl} target="_blank" rel="noreferrer">Хуудас</a></div></div>)}</div></section>}
           </div>
 
@@ -278,6 +320,45 @@ export default function Home() {
         <footer className="report-footer"><div><span className="brand-mark">УБ</span><b>Үнэ Тандагч</b></div><p>{reportId ? `Тайлан ${reportId} · ` : "Хадгалаагүй тайлан · "}{new Date(report.checkedAt).toLocaleString("mn-MN", { timeZone: "Asia/Ulaanbaatar" })} цагт үүсгэв</p><button onClick={reset}>Өөр бараа шалгах →</button></footer>
       </section>}
     </main>
+  );
+}
+
+/** Bookmarklet install card. React refuses `javascript:` hrefs in JSX, so the link is set after mount from our own constant. */
+function Collector() {
+  const link = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    let token = "";
+    try { token = readOrCreateCollectorToken(window.localStorage); } catch { token = ""; }
+    link.current?.setAttribute("href", bookmarkletHref(window.location.origin, token));
+  }, []);
+  return (
+    <section className="collector" aria-labelledby="collector-title">
+      <div>
+        <span className="eyebrow">FACEBOOK ГРУПП · 2-Р ГАР</span>
+        <h3 id="collector-title">Группийн заруудыг нэг товчоор энд авчир</h3>
+        <p>Facebook группийн хайлт, feed эсвэл Marketplace жагсаалтыг нээгээд доорх товчийг дарна. Дэлгэц дээр харагдаж буй постуудын текст, үнэ, холбоос энд ирнэ. Ажиллах бүрд та өөрөө дарна; апп Facebook руу өөрөө ханддаггүй.</p>
+        <ol>
+          <li>Доорх товчийг хөтчийнхөө хавчуурга (bookmarks) мөр рүү чирнэ. Утсан дээр: хавчуурга болгож хадгалаад нэрийг нь хаягийн мөрөнд бичиж нээнэ.</li>
+          <li>Facebook дээр группийн хайлтын үр дүн эсвэл Marketplace-ийн жагсаалтыг нээнэ.</li>
+          <li>Хавчуургыг дарна — цуглуулсан зарууд шинэ таб дээр энд нээгдэнэ.</li>
+        </ol>
+      </div>
+      <a ref={link} href="#collector-title" className="bookmarklet" title="Хавчуурга мөр рүү чирнэ үү. Энд дарвал зөвхөн Facebook дээр ажиллана гэсэн мэдэгдэл гарна." draggable>УБ Үнэ Тандагч ← FB<small>чирж хавчуурга болго</small></a>
+    </section>
+  );
+}
+
+/** Second-hand asking prices for the queried product, from the user's own collected posts. Never mixed into the store median. */
+function SecondHandBand({ leads, query }: { leads: CollectedLead[]; query: string }) {
+  const summary = useMemo(() => summarizeLeads(leads, query), [leads, query]);
+  return (
+    <section className="leads-inbox" aria-labelledby="second-hand-title">
+      <div className="leads-inbox-head"><div><span>FACEBOOK 2-Р ГАР · ТАНЫ ЦУГЛУУЛСАН · ДЭЛГҮҮРИЙН ДУНДАЖИД ОРООГҮЙ</span><h3 id="second-hand-title">Ижил барааны 2-р гар үнэ</h3></div><b>{summary.matched.length}</b></div>
+      {summary.matched.length ? <>
+        <div className="lead-band"><div><span>ХАМГИЙН ХЯМД</span><strong>{money(summary.low)}</strong></div><div><span>2-Р ГАР ДУНДАЖ</span><strong>{money(summary.median)}</strong></div><div><span>ХАМГИЙН ӨНДӨР</span><strong>{money(summary.high)}</strong></div></div>
+        <div>{summary.matched.map((lead) => <div className="lead-row" key={lead.url}><div><b>{lead.query || lead.excerpt}</b><small>{lead.excerpt}</small></div><strong>{money(lead.price)}</strong><div className="lead-actions"><a href={lead.url} target="_blank" rel="noreferrer">Пост ↗</a></div></div>)}</div>
+      </> : <p>Цуглуулсан {leads.length} зарын дотор энэ бараатай тохирох, үнэтэй пост олдсонгүй.</p>}
+    </section>
   );
 }
 
