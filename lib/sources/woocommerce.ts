@@ -40,4 +40,6 @@ export function wooSource(seller: string, base: string): SourceDefinition {
 export const WOO_STORES: SourceDefinition[] = [
   wooSource("x86", "https://x86.mn"),
   wooSource("uTech", "https://utech.mn"),
+  wooSource("NewTech", "https://new-tech.mn"),
+  wooSource("CorePC", "https://corepc.mn"),
 ];
