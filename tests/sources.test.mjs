@@ -118,6 +118,104 @@ test("matching: a variant the query did not ask for is never exact", async () =>
   assert.equal(compareProductTitle("Dell G15 i9 RTX 4060", "Dell G15 5530 i9-13900HX 16GB 1TB SSD Nvidia RTX 4060 8GB")?.match, "exact");
 });
 
+test("matching: a memory pair written as 12/256GB equals 12GB 256GB", async () => {
+  const { compareProductTitle, productTokens } = await import("../lib/matching.ts");
+  const ad = "Samsung Galaxy S24 Ultra 12/256GB";
+  // Real store titles from the live scan of 2026-11-14.
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12Gb+256Gb")?.match, "exact");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12GB 512GB")?.match, "near");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra")?.match, "near");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S26 Ultra 12GB, 256GB, Violet")?.match, "near");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 8GB/256GB")?.match, "near");
+  // No unit at all: only a known storage size makes it a memory pair.
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8/256", "Xiaomi Redmi Pad 2 Pro 8GB 256GB")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8GB 256GB", "Xiaomi Redmi Pad 2 Pro 8/256")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8+256", "Xiaomi Redmi Pad 2 Pro 8GB 128GB")?.match, "near");
+  assert.deepEqual(productTokens("Redmi 8/256"), ["redmi", "8", "256"]);
+  assert.deepEqual(productTokens("Redmi 8GB/256"), ["redmi", "8gb", "256"]);
+  assert.deepEqual(productTokens("Lenovo 16 / 1 TB"), ["lenovo", "16", "1tb"]);
+});
+
+test("matching: a pair without units still equals the same numbers typed with a space", async () => {
+  const { compareProductTitle } = await import("../lib/matching.ts");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8 256", "Xiaomi Redmi Pad 2 Pro 8/256")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8/256", "Xiaomi Redmi Pad 2 Pro 8 256")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 256", "Xiaomi Redmi Pad 8/256")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8/256", "Xiaomi Redmi Pad 2 Pro 8/256")?.match, "exact");
+  // The same call twice gives the same answer (the pair pattern keeps no state between calls).
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8/256", "Xiaomi Redmi Pad 2 Pro 8GB 256GB")?.match, "exact");
+  assert.equal(compareProductTitle("Xiaomi Redmi Pad 2 Pro 8/256", "Xiaomi Redmi Pad 2 Pro 8GB 256GB")?.match, "exact");
+});
+
+test("matching: units with spaces or in Cyrillic are the same memory pair", async () => {
+  const { compareProductTitle, productTokens } = await import("../lib/matching.ts");
+  const ad = "Samsung Galaxy S24 Ultra 12/256GB";
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12 GB/256 GB")?.match, "exact");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12 GB + 256 GB")?.match, "exact");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12/256гб")?.match, "exact");
+  assert.equal(compareProductTitle(ad, "Samsung Galaxy S24 Ultra 12ГБ 256ГБ")?.match, "exact");
+  assert.deepEqual(productTokens("Redmi 8/256гб"), ["redmi", "8", "256gb"]);
+  assert.deepEqual(productTokens("Lenovo 16/1ТБ"), ["lenovo", "16", "1tb"]);
+});
+
+test("matching: a pair never makes a different product exact", async () => {
+  const { compareProductTitle } = await import("../lib/matching.ts");
+  // "Redmi 12/128" names no other model number, so 12 can be the model. A title with its own model number is not it.
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 13 12GB 128GB")?.match, "near");
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 13 12/128")?.match, "near");
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12 4GB 128GB")?.match, "exact");
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12GB 128GB")?.match, "exact");
+  // One "12" in the title cannot be both the model number and the RAM.
+  assert.equal(compareProductTitle("Redmi Note 12 12GB 256GB", "Xiaomi Redmi Note 12/256")?.match, "near");
+  assert.equal(compareProductTitle("Redmi Note 12 12GB 256GB", "Xiaomi Redmi Note 12 12/256")?.match, "exact");
+  // A title that lists several variants has no single price for one of them.
+  assert.equal(compareProductTitle("Samsung Galaxy S24 8/512", "Samsung Galaxy S24 8/128, 8/256, 12/512")?.match, "near");
+  assert.equal(compareProductTitle("Samsung Galaxy S24 12/256", "Samsung Galaxy S24 12/256GB (12GB+256GB)")?.match, "exact");
+  // A query that says the number twice (model 8, RAM 8) is not met by a title that has it only as RAM.
+  assert.notEqual(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 7 8GB 128GB")?.match, "exact");
+  assert.notEqual(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 13 12GB 256GB")?.match, "exact");
+  assert.notEqual(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12C 12GB 256GB")?.match, "exact");
+  assert.equal(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 8 8GB 128GB")?.match, "exact");
+  assert.equal(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12 12/256")?.match, "exact");
+  // ...and not by a title that has the model number but names no RAM at all.
+  assert.equal(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 8 128GB")?.match, "near");
+  assert.equal(compareProductTitle("Redmi 8 8/128", "Xiaomi Redmi 8 128GB")?.match, "near");
+  // A screen size or a year in the title is not another model number.
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 6.79 inch")?.match, "exact");
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 2023")?.match, "exact");
+});
+
+test("matching: a long run of spaces does not slow the pair pattern down", async () => {
+  const { productTokens } = await import("../lib/matching.ts");
+  const started = performance.now();
+  assert.deepEqual(productTokens(`8${" ".repeat(50000)}x 8${" ".repeat(50000)}гx`), ["8", "8", "гx"]);
+  assert.equal(productTokens(`${"1".repeat(50000)} x`).length, 1);
+  assert.ok(performance.now() - started < 500, "took too long");
+});
+
+test("matching: things that look like a pair but are not memory", async () => {
+  const { compareProductTitle, productTokens } = await import("../lib/matching.ts");
+  assert.deepEqual(productTokens("Hot Wheels 1/64"), ["hot", "wheels", "1", "64"]);
+  assert.equal(compareProductTitle("Hot Wheels 64GB", "Hot Wheels 1/64")?.match, "near");
+  assert.deepEqual(productTokens("iPad 5G/256GB"), ["ipad", "5g", "256gb"]);
+  assert.deepEqual(productTokens("SSD 1/2TB"), ["ssd", "1", "2tb"]);
+  assert.deepEqual(productTokens("Router Wi-Fi 6/128"), ["router", "wifi", "6", "128"]);
+  assert.equal(productTokens(`Samsung ${"12/256GB ".repeat(20)}`).length, 41);
+});
+
+test("matching: the first number of a pair can still be the model number", async () => {
+  const { compareProductTitle, productTokens } = await import("../lib/matching.ts");
+  assert.equal(compareProductTitle("iPhone 12/128GB", "Apple iPhone 12 128GB, Black")?.match, "exact");
+  assert.equal(compareProductTitle("iPhone 12/128GB", "Apple iPhone 13 128GB, Black")?.match, "near");
+  assert.equal(compareProductTitle("Apple iPhone 12 128GB", "iPhone 12/128GB")?.match, "exact");
+  // A bare number typed without a pair never matches a memory size.
+  assert.equal(compareProductTitle("Redmi Note 8", "Xiaomi Redmi Note 9 8GB 128GB")?.match, "near");
+  // Not memory: a date, a three digit first number, a size that is not storage.
+  assert.deepEqual(productTokens("sale 12/25"), ["sale", "12", "25"]);
+  assert.deepEqual(productTokens("128/256GB"), ["128", "256gb"]);
+  assert.deepEqual(productTokens("MacBook 13.6/256"), ["macbook", "13", "6", "256"]);
+});
+
 test("registry: accessories titled after a device are dropped unless asked for", async () => {
   const { looksLikeAccessory, toListings } = await import("../lib/sources/index.ts");
   assert.equal(looksLikeAccessory("MacBook Air M2 13", 'Macbook Air 13.6" M2(2022)', "https://gadget.mn/product/ctf-macbook-screen-protector-privacy"), true);
