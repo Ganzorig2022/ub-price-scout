@@ -177,6 +177,9 @@ test("matching: a pair never makes a different product exact", async () => {
   assert.notEqual(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12C 12GB 256GB")?.match, "exact");
   assert.equal(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 8 8GB 128GB")?.match, "exact");
   assert.equal(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12 12/256")?.match, "exact");
+  // ...and not by a title that has the model number but names no RAM at all.
+  assert.equal(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 8 128GB")?.match, "near");
+  assert.equal(compareProductTitle("Redmi 8 8/128", "Xiaomi Redmi 8 128GB")?.match, "near");
   // A screen size or a year in the title is not another model number.
   assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 6.79 inch")?.match, "exact");
   assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 2023")?.match, "exact");
@@ -186,6 +189,7 @@ test("matching: a long run of spaces does not slow the pair pattern down", async
   const { productTokens } = await import("../lib/matching.ts");
   const started = performance.now();
   assert.deepEqual(productTokens(`8${" ".repeat(50000)}x 8${" ".repeat(50000)}гx`), ["8", "8", "гx"]);
+  assert.equal(productTokens(`${"1".repeat(50000)} x`).length, 1);
   assert.ok(performance.now() - started < 500, "took too long");
 });
 

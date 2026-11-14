@@ -64,7 +64,7 @@ function tokenize(value: string): ProductText {
   });
   const outside = lower.replace(MEMORY_PAIR, (whole, ram: string, ramUnit: string | undefined, size: string, sizeUnit: string | undefined) => (isPair(ram, ramUnit, size, sizeUnit) ? " " : whole));
   const named = words(outside).some((token) => /\d/.test(token) && !/^(?:\d+(?:gb|tb)|[45]g)$/.test(token));
-  const numbers = words(outside.replace(/\d+[.,]\d+/g, " ")).filter((token) => /^\d+$/.test(token) && !/^(?:19|20)\d\d$/.test(token));
+  const numbers = words(outside.replace(/(?<!\d)\d{1,6}[.,]\d{1,6}/g, " ")).filter((token) => /^\d+$/.test(token) && !/^(?:19|20)\d\d$/.test(token));
   return { tokens: words(text), loose, variants: variants.size, numbers, unsure: looseRam && !named };
 }
 
@@ -102,8 +102,8 @@ export function compareProductTitle(query: string, title: string): { match: Matc
   const extraCategory = !wanted.some((token) => CATEGORY_TOKEN.test(token)) && [...actual].some((token) => CATEGORY_TOKEN.test(token));
   // One loose number in the title cannot be the model number and the RAM at once ("Redmi Note 12 12GB" vs "Redmi Note 12/256").
   const usedTwice = [...offered.loose].some((size) => wantedSet.has(size) && wantedSet.has(`${size}gb`) && !offered.tokens.includes(`${size}gb`) && offered.tokens.filter((token) => token === size).length < 2);
-  // A query that names a number twice ("Pixel 8 8/128": model 8 and 8 GB) needs a title with that model number, not only that RAM.
-  const askedTwice = [...asked.loose].some((size) => asked.numbers.includes(size) && !offered.numbers.includes(size));
+  // A query that names a number twice ("Pixel 8 8/128": model 8 and 8 GB) needs a title with both: that model number and that RAM.
+  const askedTwice = [...asked.loose].some((size) => asked.numbers.includes(size) && !(offered.numbers.includes(size) && (offered.loose.has(size) || offered.tokens.includes(`${size}gb`))));
   // "Redmi 12/128" can mean the Redmi 12, so a title with its own model number ("Redmi 13 12GB 128GB") is not surely it.
   const otherModel = asked.unsure && offered.numbers.some((token) => !wantedSet.has(token));
   const exact = ratio >= 0.72 && importantHit === important.length && exactIdentity && !extraVariant && !extraCategory && offered.variants < 2 && !usedTwice && !askedTwice && !otherModel;
