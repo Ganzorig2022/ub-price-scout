@@ -12,8 +12,9 @@ const CATEGORY_TOKEN = /^(?:i[3579]|ryzen|core|notebook|laptop|ноутбук|з
 /**
  * A memory pair as sellers write it: "12/256GB", "8+256", "8GB/256", "12 GB / 256 GB", "16 / 1 TB" (RAM, then storage).
  * The first number has at most two digits and no digit, letter or dot before it, so "128/256GB" and "13.6/256" are not pairs.
+ * Spaces are counted (at most 3 in a row): an open-ended run makes the pattern slow on a long text.
  */
-const MEMORY_PAIR = /(?<![a-zа-яөүё0-9.])(\d{1,2})\s*(gb)?\s*[/+]\s*(\d{1,4})\s*(gb|tb)?(?![a-zа-яөүё0-9])/g;
+const MEMORY_PAIR = /(?<![a-zа-яөүё0-9.])(\d{1,2})\s{0,3}(gb)?\s{0,3}[/+]\s{0,3}(\d{1,4})\s{0,3}(gb|tb)?(?![a-zа-яөүё0-9])/g;
 /** With no unit on the storage side, only these sizes make a pair. "12/25" stays a date. */
 const STORAGE_GB = new Set(["32", "64", "128", "256", "512", "1024"]);
 /** With no unit on the RAM side, only these sizes make a pair. "1/64" stays a toy car scale. */
@@ -25,7 +26,7 @@ type ProductText = {
   loose: Set<string>;
   /** How many different memory pairs the text lists. More than one = a title for several variants. */
   variants: number;
-  /** Bare numbers outside the pairs: the candidates for a model number ("13" in "Redmi 13 12/128"). */
+  /** Bare numbers outside the pairs: the candidates for a model number ("13" in "Redmi 13 12/128"). No decimals ("6.79") and no years. */
   numbers: string[];
   /** True when a pair starts with a unitless number and nothing else in the text can be the model number ("Redmi 12/128"). */
   unsure: boolean;
@@ -61,9 +62,10 @@ function tokenize(value: string): ProductText {
     variants.add(`${ram}:${size}${sizeUnit ?? "gb"}`);
     return ` ${ram}${ramUnit ?? ""} ${size}${sizeUnit ?? ""} `;
   });
-  const outside = words(lower.replace(MEMORY_PAIR, (whole, ram: string, ramUnit: string | undefined, size: string, sizeUnit: string | undefined) => (isPair(ram, ramUnit, size, sizeUnit) ? " " : whole)));
-  const named = outside.some((token) => /\d/.test(token) && !/^(?:\d+(?:gb|tb)|[45]g)$/.test(token));
-  return { tokens: words(text), loose, variants: variants.size, numbers: outside.filter((token) => /^\d+$/.test(token)), unsure: looseRam && !named };
+  const outside = lower.replace(MEMORY_PAIR, (whole, ram: string, ramUnit: string | undefined, size: string, sizeUnit: string | undefined) => (isPair(ram, ramUnit, size, sizeUnit) ? " " : whole));
+  const named = words(outside).some((token) => /\d/.test(token) && !/^(?:\d+(?:gb|tb)|[45]g)$/.test(token));
+  const numbers = words(outside.replace(/\d+[.,]\d+/g, " ")).filter((token) => /^\d+$/.test(token) && !/^(?:19|20)\d\d$/.test(token));
+  return { tokens: words(text), loose, variants: variants.size, numbers, unsure: looseRam && !named };
 }
 
 export function productTokens(value: string) {
@@ -100,9 +102,11 @@ export function compareProductTitle(query: string, title: string): { match: Matc
   const extraCategory = !wanted.some((token) => CATEGORY_TOKEN.test(token)) && [...actual].some((token) => CATEGORY_TOKEN.test(token));
   // One loose number in the title cannot be the model number and the RAM at once ("Redmi Note 12 12GB" vs "Redmi Note 12/256").
   const usedTwice = [...offered.loose].some((size) => wantedSet.has(size) && wantedSet.has(`${size}gb`) && !offered.tokens.includes(`${size}gb`) && offered.tokens.filter((token) => token === size).length < 2);
+  // A query that names a number twice ("Pixel 8 8/128": model 8 and 8 GB) needs a title with that model number, not only that RAM.
+  const askedTwice = [...asked.loose].some((size) => asked.numbers.includes(size) && !offered.numbers.includes(size));
   // "Redmi 12/128" can mean the Redmi 12, so a title with its own model number ("Redmi 13 12GB 128GB") is not surely it.
   const otherModel = asked.unsure && offered.numbers.some((token) => !wantedSet.has(token));
-  const exact = ratio >= 0.72 && importantHit === important.length && exactIdentity && !extraVariant && !extraCategory && offered.variants < 2 && !usedTwice && !otherModel;
+  const exact = ratio >= 0.72 && importantHit === important.length && exactIdentity && !extraVariant && !extraCategory && offered.variants < 2 && !usedTwice && !askedTwice && !otherModel;
   if (!exact && ratio < 0.42) return null;
   return { match: exact ? "exact" : "near", confidence: Math.round(Math.min(0.98, ratio * 0.86 + (exact ? 0.1 : 0)) * 100) };
 }

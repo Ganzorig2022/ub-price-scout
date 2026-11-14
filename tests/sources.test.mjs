@@ -171,6 +171,22 @@ test("matching: a pair never makes a different product exact", async () => {
   // A title that lists several variants has no single price for one of them.
   assert.equal(compareProductTitle("Samsung Galaxy S24 8/512", "Samsung Galaxy S24 8/128, 8/256, 12/512")?.match, "near");
   assert.equal(compareProductTitle("Samsung Galaxy S24 12/256", "Samsung Galaxy S24 12/256GB (12GB+256GB)")?.match, "exact");
+  // A query that says the number twice (model 8, RAM 8) is not met by a title that has it only as RAM.
+  assert.notEqual(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 7 8GB 128GB")?.match, "exact");
+  assert.notEqual(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 13 12GB 256GB")?.match, "exact");
+  assert.notEqual(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12C 12GB 256GB")?.match, "exact");
+  assert.equal(compareProductTitle("Google Pixel 8 8/128", "Google Pixel 8 8GB 128GB")?.match, "exact");
+  assert.equal(compareProductTitle("Redmi 12 12/256", "Xiaomi Redmi 12 12/256")?.match, "exact");
+  // A screen size or a year in the title is not another model number.
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 6.79 inch")?.match, "exact");
+  assert.equal(compareProductTitle("Redmi 12/128", "Xiaomi Redmi 12/128 2023")?.match, "exact");
+});
+
+test("matching: a long run of spaces does not slow the pair pattern down", async () => {
+  const { productTokens } = await import("../lib/matching.ts");
+  const started = performance.now();
+  assert.deepEqual(productTokens(`8${" ".repeat(50000)}x 8${" ".repeat(50000)}гx`), ["8", "8", "гx"]);
+  assert.ok(performance.now() - started < 500, "took too long");
 });
 
 test("matching: things that look like a pair but are not memory", async () => {
