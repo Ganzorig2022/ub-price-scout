@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Instrument_Serif } from "next/font/google";
+import { IBM_Plex_Sans, Instrument_Serif, Geist } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const body = IBM_Plex_Sans({
   variable: "--font-body",
@@ -41,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="mn">
+    <html lang="mn" className={cn("font-sans", geist.variable)}>
       <body className={`${body.variable} ${display.variable}`}>
         {children}
       </body>

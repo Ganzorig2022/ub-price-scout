@@ -64,3 +64,14 @@ Branch: `feat/clean-calm-ui`. Started 2026-11-14. Owner picked the look and allo
 
 - `public/icon-*.png`, `public/og.png`, `public/favicon.svg` still carry the old look. Tell the owner.
 - No change to scan, intake, sources or the database.
+
+## Step 1 result (2026-11-14)
+
+- `npx shadcn@latest init -d -y` works here, and `npm run build` passes after it (exit code 0).
+- This shadcn version (style `base-nova`) is built on **Base UI** (`@base-ui/react`), not Radix. So: no
+  `asChild`, use the `render` prop; a folded panel stays in the DOM with `keepMounted`; active tab is
+  `data-active`.
+- Added: `components/ui/{button,input,textarea,tabs,card,badge,collapsible}.tsx`, `lib/utils.ts`,
+  `components.json`. `cn` comes from the `cn` package (shadcn-ui/cn).
+- The init put a Latin-only `Geist` font into `app/layout.tsx` and appended theme tokens plus a `.dark` block
+  to `app/globals.css`. Step 2 replaces the font with Golos Text and removes the old stylesheet rules.
