@@ -1,23 +1,17 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { bookmarkletHref, parseCollectedLeads, readOrCreateCollectorToken, summarizeLeads, type CollectedLead } from "../lib/facebook-collect";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { parseCollectedLeads, type CollectedLead } from "../lib/facebook-collect";
 import { extractIntakeDraft, extractSharedIntake, extractSharedPayload, facebookListingUrl, type IntakeDraft } from "../lib/intake";
-
-type Listing = { seller: string; title: string; price: number; url: string; match: "exact" | "near"; stock: "in_stock" | "out_of_stock" | "unknown"; confidence: number; checkedAt: string; note?: string };
-type Source = { seller: string; searchUrl: string; state: "found" | "no_match" | "blocked" | "timed_out" | "unreadable"; listings: Listing[]; attemptedQueries?: string[] };
-type FacebookLead = { seller: string; pageUrl: string; searchUrl: string; status: "manual_lead" };
-type Report = { query: string; targetPrice: number | null; listingUrl: string | null; verdict: "great" | "fair" | "high" | "insufficient"; median: number | null; low: number | null; high: number | null; exact: Listing[]; near: Listing[]; sources: Source[]; facebookLeads?: FacebookLead[]; checkedAt: string };
-type IntakeMode = "details" | "facebook_text" | "facebook_link";
-type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
+import { Collector } from "./components/collector";
+import { HowItWorks, LoadingStage } from "./components/home-extras";
+import { IntakeForm } from "./components/intake-form";
+import { LeadsInbox } from "./components/leads-inbox";
+import { ReportView } from "./components/report-view";
+import { TopBar } from "./components/top-bar";
+import type { InstallPromptEvent, IntakeMode, Report } from "./components/types";
 
 const EXAMPLE = "Apple iPad 11 A16 256GB Wi-Fi";
-
-const money = (value: number | null) => value === null ? "—" : `${new Intl.NumberFormat("mn-MN").format(value)}₮`;
-const relativeTime = (iso: string) => {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  return minutes < 1 ? "дөнгөж сая" : `${minutes} минутын өмнө`;
-};
 
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   try {
@@ -236,135 +230,69 @@ export default function Home() {
   }
 
   return (
-    <main>
-      <nav className="topbar" aria-label="Үндсэн цэс">
-        <button className="brand reset-button" onClick={reset} aria-label="УБ Үнэ Тандагч нүүр"><span className="brand-mark">УБ</span><span>Үнэ Тандагч</span></button>
-        <div className="top-actions"><span className="market-status"><i /> Дэлгүүрийн бодит үнэ</span>{report && <button className="text-button" onClick={reset}>Шинэ хайлт</button>}</div>
-      </nav>
+    <main className="min-h-screen">
+      <TopBar hasReport={!!report} onReset={reset} />
 
-      {!report && <section className="hero" id="top">
-        <div className="eyebrow">Улаанбаатарын хараат бус үнийн судалгаа</div>
-        <h1>Авахаасаа өмнө<br />бодит үнийг мэд.</h1>
-        <p className="hero-copy">Facebook зарын текст, холбоос эсвэл дэлгэцийн зургаас барааг таньж, Монголын онлайн дэлгүүрүүдийн бодит үнэтэй харьцуулна.</p>
+      {!report && (
+        <section className="mx-auto w-full max-w-[760px] px-4 pt-6 pb-12 sm:pt-10" id="top">
+          <div className="text-[13px] font-medium text-primary">Улаанбаатарын хараат бус үнийн судалгаа</div>
+          <h1 className="mt-2 text-[28px] leading-[1.15] font-semibold tracking-tight sm:text-[44px]">
+            Авахаасаа өмнө<br />бодит үнийг мэд.
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground sm:text-base">
+            Facebook зарын текст, холбоос эсвэл дэлгэцийн зургаас барааг таньж, Монголын онлайн дэлгүүрүүдийн бодит үнэтэй харьцуулна.
+          </p>
 
-        <form className="search-card" onSubmit={submit}>
-          <div className="input-tabs" aria-label="Оруулах мэдээллийн төрөл">
-            <button type="button" aria-pressed={mode === "facebook_text"} onClick={() => changeMode("facebook_text")}>Facebook зар</button>
-            <button type="button" aria-pressed={mode === "facebook_link"} onClick={() => changeMode("facebook_link")}>Зарын холбоос</button>
-            <button type="button" aria-pressed={mode === "details"} onClick={() => changeMode("details")}>Бараагаа бичих</button>
-          </div>
-          {mode === "facebook_text" && <div className="social-intake"><div className="field"><label htmlFor="post-text">Facebook зарын текст</label><textarea id="post-text" value={postText} onChange={(event) => { setPostText(event.target.value); setDraftReady(false); }} placeholder={'Жишээ:\nRedmi Pad 2 Pro 8/256GB\nЦоо шинэ, үнэ 1.9 сая₮'} rows={5} /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={extractFromText} disabled={extracting}>Текстээс мэдээлэл ялгах</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг уншуулах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Дэлгэцийн зураг таны төхөөрөмжөөс гарахгүй. Текст танилт хөтөч дотор ажиллана.</p></div>}
-          {mode === "facebook_link" && <div className="social-intake"><div className="field"><label htmlFor="listing-url">Нийтэд нээлттэй Facebook холбоос</label><input id="listing-url" inputMode="url" value={listingUrl} onChange={(event) => { setListingUrl(event.target.value); setDraftReady(false); }} placeholder="https://facebook.com/…" /></div><div className="intake-actions"><button className="extract-button" type="button" onClick={() => void extractFromUrl()} disabled={extracting}>{extracting ? "Уншиж байна…" : "Холбоосоос мэдээлэл авах"}</button><label className="upload-button">{extracting && ocrProgress ? `Уншиж байна ${ocrProgress}%` : "Дэлгэцийн зураг ашиглах"}<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void readScreenshot(file); }} disabled={extracting} /></label></div><p className="privacy-note">Facebook хаалттай бол зарын текст эсвэл дэлгэцийн зураг ашиглаарай.</p></div>}
-          {mode !== "details" && <div className="share-target-tip"><span>ШУУД ХУВААЛЦАХ</span><div><b>Facebook → Share (Хуваалцах) → УБ Үнэ Тандагч</b><small>Аппыг төхөөрөмждөө суулгасны дараа постын текст, холбоос шууд энд орж ирнэ.</small></div>{installPrompt && <button type="button" onClick={() => void installApp()}>Апп суулгах</button>}</div>}
-          {(mode === "details" || draftReady) && <div className={mode === "details" ? "confirmation-fields" : "draft-panel"}>{mode !== "details" && <div className="draft-head"><div><span>ТАНЬСАН МЭДЭЭЛЭЛ</span><b>Шалгаад засварлана уу</b></div><strong>{draftConfidence}%</strong></div>}<div className="field"><label htmlFor="product-query">Барааны нэр ба гол үзүүлэлт</label><input id="product-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Xiaomi Redmi Pad 2 Pro 8GB 256GB" autoComplete="off" /></div><div className="price-and-action"><div className="field price-field"><label htmlFor="asking-price">Зарын үнэ <span>заавал биш</span></label><div className="money-input"><input id="asking-price" inputMode="numeric" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="1,900,000" /><b>₮</b></div></div><button className="scan-button" type="submit" disabled={loading}>{loading ? <><span className="spinner" /> Дэлгүүрүүдийг шалгаж байна…</> : <>УБ-ын үнийг хайх <span>→</span></>}</button></div></div>}
-          {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="example-row"><span>Жишээгээр үзэх</span><button type="button" onClick={() => { changeMode("details"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}>iPad A16 · 256GB · Wi‑Fi</button></div>
-        </form>
+          <IntakeForm
+            mode={mode}
+            changeMode={changeMode}
+            postText={postText}
+            setPostText={setPostText}
+            listingUrl={listingUrl}
+            setListingUrl={setListingUrl}
+            query={query}
+            setQuery={setQuery}
+            targetPrice={targetPrice}
+            setTargetPrice={setTargetPrice}
+            draftReady={draftReady}
+            setDraftReady={setDraftReady}
+            draftConfidence={draftConfidence}
+            extracting={extracting}
+            ocrProgress={ocrProgress}
+            loading={loading}
+            error={error}
+            canInstall={!!installPrompt}
+            installApp={installApp}
+            extractFromText={extractFromText}
+            extractFromUrl={extractFromUrl}
+            readScreenshot={readScreenshot}
+            submit={submit}
+            onExample={() => { changeMode("details"); setQuery(EXAMPLE); setTargetPrice("1900000"); }}
+          />
 
-        {!!leads.length && <section className="leads-inbox" aria-labelledby="leads-inbox-title">
-          <div className="leads-inbox-head"><div><span>FACEBOOK ГРУППЭЭС ЦУГЛУУЛСАН · ЗӨВХӨН ЭНЭ ТАБ ДЭЭР</span><h3 id="leads-inbox-title">Цуглуулсан зарууд</h3></div><b>{leads.length}</b></div>
-          <p>Эдгээр зар таны хөтчөөс ирсэн бөгөөд серверт хадгалагдахгүй. Нэгийг нь сонгоод дэлгүүрийн үнэтэй харьцуулна уу; хайлтын дараа ижил барааны 2-р гар үнийн хүрээг тусад нь харуулна.</p>
-          <div>{leads.map((lead) => <div className="lead-row" key={lead.url}><div><b>{lead.query || lead.excerpt}</b><small>{lead.excerpt}</small></div><strong>{money(lead.price)}</strong><div className="lead-actions"><button type="button" onClick={() => applyLead(lead)}>Энэ барааг шалгах</button><a href={lead.url} target="_blank" rel="noreferrer">Пост ↗</a></div></div>)}</div>
-        </section>}
+          {loading && <LoadingStage />}
 
-        <Collector />
+          {!!leads.length && <LeadsInbox leads={leads} onApply={applyLead} />}
 
-        <div className="source-strip" aria-label="Хайлт юуг шалгах вэ"><span>FACEBOOK → ЗАХ ЗЭЭЛ</span><b>Загвар</b><b>Багтаамж</b><b>Зарын үнэ</b><b>Үлдэгдэл</b><b>НӨАТ</b></div>
-      </section>}
+          <Collector />
 
-      {!report && !loading && <section className="preview-panel" aria-label="Хэрхэн ажиллах вэ">
-        <div><span className="index">01</span><strong>Тодорхойлно</strong><p>Загвар, багтаамж, холболт болон төлөвөөр нь яг ижил барааг танина.</p></div>
-        <div><span className="index">02</span><strong>Харьцуулна</strong><p>Зөвхөн ижил үзүүлэлттэй саналуудыг бодит үнийн хүрээнд оруулж, төстэйг нь тусад нь харуулна.</p></div>
-        <div><span className="index">03</span><strong>Дүгнэнэ</strong><p>Тодорхой үнэлгээ, эх сурвалжийн холбоос болон шалгасан хугацааг ил тод харуулна.</p></div>
-      </section>}
+          {!loading && <HowItWorks />}
+        </section>
+      )}
 
-      {loading && !report && <section className="loading-stage" aria-live="polite"><div className="radar"><span /><span /><i /></div><h2>Онлайн дэлгүүрүүдээр хайж байна…</h2><p>Дэлгүүрүүдийн хайлтын хуудсыг шалгаж, яг ижил болон төстэй барааг ялгаж байна.</p><div className="loading-sources"><span>Best Computers</span><span>iTStore</span><span>PC Mall</span><span>SEGU</span><span>BedRock</span><span>iPick</span><span>x86</span><span>+8 дэлгүүр</span></div></section>}
-
-      {report && <section className="report" id="report">
-        <header className="report-head">
-          <div><div className="eyebrow">Зах зээлийн тайлан · {relativeTime(report.checkedAt)}</div><h2>{report.query}</h2><p>{sourceStats.checked} эх сурвалж шалгасан · {sourceStats.reached} хариу өгсөн · {sourceStats.unreadable} автоматаар уншигдаагүй · {sourceStats.blocked} хаалттай</p></div>
-          <div className="report-actions">{report.listingUrl && <a href={report.listingUrl} target="_blank" rel="noreferrer">Эх зар ↗</a>}<button onClick={shareReport} disabled={!reportId} title={reportId ? undefined : "Энэ тайланг хуваалцахаар хадгалж чадсангүй"}>{copied ? "Холбоос хууллаа ✓" : reportId ? "Тайлан хуваалцах" : "Хуваалцах боломжгүй"}</button><button className="icon-action" onClick={() => window.print()} aria-label="Тайлан хэвлэх">↗</button></div>
-        </header>
-
-        <div className={`verdict-card verdict-${report.verdict}`}>
-          <div className="verdict-label">ҮНИЙН ДҮГНЭЛТ</div>
-          <div className="verdict-main"><span className="verdict-word">{report.verdict === "great" ? "Маш сайн үнэ" : report.verdict === "fair" ? "Боломжийн үнэ" : report.verdict === "high" ? "Өндөр үнэ" : "Нэмэлт мэдээлэл хэрэгтэй"}</span><p>{report.verdict === "great" ? "Энэ зарын үнэ ижил барааны одоогийн дундаж үнээс мэдэгдэхүйц хямд байна." : report.verdict === "fair" ? "Энэ зарын үнэ ижил барааны зах зээлийн боломжийн хүрээнд байна." : report.verdict === "high" ? "Энэ зарын үнэ ижил барааны одоогийн зах зээлийн хүрээнээс өндөр байна." : "Найдвартай, яг ижил барааны үнийн хүрээ олдсонгүй. Доорх эх сурвалжуудыг нээх эсвэл барааны үзүүлэлтийг нарийвчилна уу."}</p></div>
-          <div className="ask-block"><span>Зарын үнэ</span><strong>{money(report.targetPrice)}</strong>{report.targetPrice && report.median && <small>Дундаж үнээс {Math.abs(Math.round((report.targetPrice / report.median - 1) * 100))}% {report.targetPrice > report.median ? "өндөр" : "хямд"}</small>}</div>
-        </div>
-
-        <div className="metric-grid">
-          <div><span>ХАМГИЙН ХЯМД</span><strong>{money(report.low)}</strong><small>{report.exact[0]?.seller ?? "Яг ижил бараа олдсонгүй"}</small></div>
-          <div><span>ЗАХ ЗЭЭЛИЙН ДУНДАЖ</span><strong>{money(report.median)}</strong><small>Яг ижил {report.exact.length} бодит санал</small></div>
-          <div><span>ХАМГИЙН ӨНДӨР</span><strong>{money(report.high)}</strong><small>Зөвхөн яг ижил үзүүлэлтээр</small></div>
-        </div>
-
-        <div className="results-layout">
-          <div className="listings-column">
-            <div className="section-title"><div><span>БОДИТ ҮНИЙН ХАРЬЦУУЛАЛТ</span><h3>Яг ижил бараа</h3></div><span className="count-pill">{report.exact.length}</span></div>
-            {report.exact.length ? <div className="listing-table">{report.exact.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div> : <div className="empty-state"><div className="empty-mark">?</div><div><h3>Баталгаатай, яг ижил бараа олдсонгүй</h3><p>Зарим дэлгүүр бараагаа скриптийн цаана нуух эсвэл автомат хандалтыг хаах боломжтой. Аль эх сурвалж хариу өгснийг баруун талын жагсаалтаас харна уу. Загварын нэрийг товчлох эсвэл доорх Facebook сэжмүүдийг нээгээрэй.</p></div></div>}
-
-            {!!report.near.length && <div className="near-section"><button className="near-toggle" onClick={() => setShowNear((value) => !value)} aria-expanded={showNear} aria-controls="near-match-results"><span><b>Төстэй бараа</b> · үнийн дүгнэлтэд ороогүй</span><span>{report.near.length} {showNear ? "−" : "+"}</span></button>{showNear && <div className="listing-table near-list" id="near-match-results">{report.near.map((item, index) => <ListingRow item={item} key={`${item.url}-${index}`} rank={index + 1} />)}</div>}</div>}
-
-            {!!leads.length && <SecondHandBand leads={leads} query={report.query} />}
-
-            {!!report.facebookLeads?.length && <section className="facebook-leads" aria-labelledby="facebook-leads-title"><div className="facebook-leads-head"><div><span>FACEBOOK СЭЖИМ · ГАРААР ШАЛГАНА</span><h3 id="facebook-leads-title">Facebook худалдааны постууд</h3></div><b>{report.facebookLeads.length}</b></div><p>Facebook хайлтын үр дүнг таны нэвтэрсэн төхөөрөмж дээр нээнэ. Эдгээр нь автоматаар баталгаажсан үнэ биш бөгөөд зах зээлийн дундажт ороогүй.</p><div className="facebook-lead-list">{report.facebookLeads.map((lead) => <div className="facebook-lead-row" key={lead.seller}><div><i /> <b>{lead.seller}</b><small>Баталгаажаагүй Facebook сэжим</small></div><div><a href={lead.searchUrl} target="_blank" rel="noreferrer">Пост хайх ↗</a><a href={lead.pageUrl} target="_blank" rel="noreferrer">Хуудас</a></div></div>)}</div></section>}
-          </div>
-
-          <aside className="source-ledger">
-            <div className="section-title"><div><span>ЭХ СУРВАЛЖИЙН БҮРТГЭЛ</span><h3>Шалгасан дэлгүүрүүд</h3></div></div>
-            <div className="ledger-list">{report.sources.map((source) => <a href={source.searchUrl} target="_blank" rel="noreferrer" key={source.seller}><span className={`source-dot state-${source.state}`} /><div><b>{source.seller}</b><small>{source.state === "found" ? `${source.listings.length} боломжит бараа` : source.state === "no_match" ? "Хариу өгсөн · бараа олдоогүй" : source.state === "unreadable" ? `Каталог автоматаар уншигдсангүй${source.attemptedQueries && source.attemptedQueries.length > 1 ? " · 2 хайлт" : ""}` : source.state === "timed_out" ? "Хугацаа хэтэрсэн" : "Хандалт хязгаарлагдсан"}</small></div><span>↗</span></a>)}</div>
-            <p className="ledger-note">Эдгээр үнэ нь судалгааны баримт болохоос худалдан авах зөвлөмж биш. Эцсийн үнэ, НӨАТ-ын баримт, баталгаа болон үлдэгдлийг худалдагчаас заавал лавлаарай.</p>
-          </aside>
-        </div>
-
-        <footer className="report-footer"><div><span className="brand-mark">УБ</span><b>Үнэ Тандагч</b></div><p>{reportId ? `Тайлан ${reportId} · ` : "Хадгалаагүй тайлан · "}{new Date(report.checkedAt).toLocaleString("mn-MN", { timeZone: "Asia/Ulaanbaatar" })} цагт үүсгэв</p><button onClick={reset}>Өөр бараа шалгах →</button></footer>
-      </section>}
+      {report && (
+        <ReportView
+          report={report}
+          reportId={reportId}
+          sourceStats={sourceStats}
+          copied={copied}
+          shareReport={shareReport}
+          showNear={showNear}
+          setShowNear={setShowNear}
+          leads={leads}
+          reset={reset}
+        />
+      )}
     </main>
   );
-}
-
-/** Bookmarklet install card. React refuses `javascript:` hrefs in JSX, so the link is set after mount from our own constant. */
-function Collector() {
-  const link = useRef<HTMLAnchorElement>(null);
-  useEffect(() => {
-    let token = "";
-    try { token = readOrCreateCollectorToken(window.localStorage); } catch { token = ""; }
-    link.current?.setAttribute("href", bookmarkletHref(window.location.origin, token));
-  }, []);
-  return (
-    <section className="collector" aria-labelledby="collector-title">
-      <div>
-        <span className="eyebrow">FACEBOOK ГРУПП · 2-Р ГАР</span>
-        <h3 id="collector-title">Группийн заруудыг нэг товчоор энд авчир</h3>
-        <p>Facebook группийн хайлт, feed эсвэл Marketplace жагсаалтыг нээгээд доорх товчийг дарна. Дэлгэц дээр харагдаж буй постуудын текст, үнэ, холбоос энд ирнэ. Ажиллах бүрд та өөрөө дарна; апп Facebook руу өөрөө ханддаггүй.</p>
-        <ol>
-          <li>Доорх товчийг хөтчийнхөө хавчуурга (bookmarks) мөр рүү чирнэ. Утсан дээр: хавчуурга болгож хадгалаад нэрийг нь хаягийн мөрөнд бичиж нээнэ.</li>
-          <li>Facebook дээр группийн хайлтын үр дүн эсвэл Marketplace-ийн жагсаалтыг нээнэ.</li>
-          <li>Хавчуургыг дарна — цуглуулсан зарууд шинэ таб дээр энд нээгдэнэ.</li>
-        </ol>
-      </div>
-      <a ref={link} href="#collector-title" className="bookmarklet" title="Хавчуурга мөр рүү чирнэ үү. Энд дарвал зөвхөн Facebook дээр ажиллана гэсэн мэдэгдэл гарна." draggable>УБ Үнэ Тандагч ← FB<small>чирж хавчуурга болго</small></a>
-    </section>
-  );
-}
-
-/** Second-hand asking prices for the queried product, from the user's own collected posts. Never mixed into the store median. */
-function SecondHandBand({ leads, query }: { leads: CollectedLead[]; query: string }) {
-  const summary = useMemo(() => summarizeLeads(leads, query), [leads, query]);
-  return (
-    <section className="leads-inbox" aria-labelledby="second-hand-title">
-      <div className="leads-inbox-head"><div><span>FACEBOOK 2-Р ГАР · ТАНЫ ЦУГЛУУЛСАН · ДЭЛГҮҮРИЙН ДУНДАЖИД ОРООГҮЙ</span><h3 id="second-hand-title">Ижил барааны 2-р гар үнэ</h3></div><b>{summary.matched.length}</b></div>
-      {summary.matched.length ? <>
-        <div className="lead-band"><div><span>ХАМГИЙН ХЯМД</span><strong>{money(summary.low)}</strong></div><div><span>2-Р ГАР ДУНДАЖ</span><strong>{money(summary.median)}</strong></div><div><span>ХАМГИЙН ӨНДӨР</span><strong>{money(summary.high)}</strong></div></div>
-        <div>{summary.matched.map((lead) => <div className="lead-row" key={lead.url}><div><b>{lead.query || lead.excerpt}</b><small>{lead.excerpt}</small></div><strong>{money(lead.price)}</strong><div className="lead-actions"><a href={lead.url} target="_blank" rel="noreferrer">Пост ↗</a></div></div>)}</div>
-      </> : <p>Цуглуулсан {leads.length} зарын дотор энэ бараатай тохирох, үнэтэй пост олдсонгүй.</p>}
-    </section>
-  );
-}
-
-function ListingRow({ item, rank }: { item: Listing; rank: number }) {
-  let safeUrl: string | null = null;
-  try { const parsed = new URL(item.url); safeUrl = parsed.protocol === "https:" ? parsed.toString() : null; } catch { safeUrl = null; }
-  const content = <><span className="rank">{String(rank).padStart(2, "0")}</span><div className="listing-copy"><b>{item.seller}</b><span>{item.title}</span><small><i className={`stock stock-${item.stock}`} /> {item.stock === "in_stock" ? "Үлдэгдэлтэй" : item.stock === "out_of_stock" ? "Дууссан" : "Үлдэгдэл тодорхойгүй"} · {item.confidence}% тохирол</small></div><strong className="listing-price">{money(item.price)}</strong><span className="external">{safeUrl ? "↗" : ""}</span></>;
-  return safeUrl ? <a className="listing-row" href={safeUrl} target="_blank" rel="noreferrer">{content}</a> : <div className="listing-row">{content}</div>;
 }
