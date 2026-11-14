@@ -12,7 +12,7 @@ export function PriceRangeBar({ low, median, high, target }: PriceScaleInput) {
   const scale = priceScale({ low, median, high, target });
   if (!scale) return null;
   // A wide band holds both prices under its own ends. A narrow one gets one centred "low - high" line.
-  const wide = scale.high - scale.low >= 50;
+  const wide = scale.high - scale.low >= 65;
   const middle = Math.min(75, Math.max(25, (scale.low + scale.high) / 2));
   return (
     <div className="mt-5 text-xs" aria-hidden="true">
@@ -49,7 +49,7 @@ export function PriceRangeBar({ low, median, high, target }: PriceScaleInput) {
           </>
         ) : (
           <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${middle}%` }}>
-            {money(low)} - {money(high)}
+            {low === high ? money(low) : <>{money(low)} - {money(high)}</>}
           </span>
         )}
       </div>

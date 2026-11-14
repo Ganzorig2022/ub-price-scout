@@ -75,3 +75,18 @@ Branch: `feat/clean-calm-ui`. Started 2026-11-14. Owner picked the look and allo
   `components.json`. `cn` comes from the `cn` package (shadcn-ui/cn).
 - The init put a Latin-only `Geist` font into `app/layout.tsx` and appended theme tokens plus a `.dark` block
   to `app/globals.css`. Step 2 replaces the font with Golos Text and removes the old stylesheet rules.
+
+## Status (2026-11-14, end of session)
+
+- Steps 1-7 done. Commits: `56b76fb`, `0c60530`, `9be2043`, plus the review-fix commit after it. Not pushed.
+- Checks on the last commit: `npm run lint` 0, `npx tsc --noEmit` 0, `npm test` 0 (30 unit, 9 rendered-html).
+- Smoke run in Chrome: desktop 1440px, and a 390px and 360px frame. Example scan works, no sideways scroll.
+  Screenshots: `~/Desktop/ub-price-scout-ui/`.
+- `react-reviewer` round 1 on `9be2043`: no critical or high findings. Fixed: truncated listing and lead text,
+  tab labels and the loading button on narrow phones, the range bar label threshold, the duplicate single price,
+  the phone layout of a listing row.
+- Open (not fixed, by choice): the 3 mode tabs have no `TabsContent` panels, so `aria-controls` points at
+  nothing. The share button says "Хуваалцах боломжгүй" in local dev (no report id); not checked against `main`.
+- Not verified by anyone: keyboard use of the tabs, the file picker, the bookmarklet drag, print output, the
+  leads inbox with real leads, the verdicts fair / high / insufficient, a real phone.
+- Next: owner looks at the screenshots, then decides on push and PR.

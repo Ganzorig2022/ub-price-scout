@@ -38,7 +38,7 @@ type IntakeFormProps = {
 };
 
 const softButton = "h-11 bg-primary-soft px-4 text-primary hover:bg-primary-soft/70";
-const tabTrigger = "h-full px-1 text-xs min-[380px]:text-[13px] sm:text-sm data-active:shadow-soft";
+const tabTrigger = "h-full px-1 text-xs leading-tight whitespace-normal min-[380px]:text-[13px] sm:text-sm data-active:shadow-soft";
 const inputBox = "h-11 bg-card px-3 text-base md:text-base";
 
 /** Screenshot picker. The file input sits inside the label, so a click on the label opens the picker. */
@@ -190,7 +190,7 @@ export function IntakeForm(props: IntakeFormProps) {
                   <b className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-medium text-muted-foreground">₮</b>
                 </div>
               </div>
-              <Button className="h-11 px-5 text-[15px]" type="submit" disabled={loading}>
+              <Button className="h-auto min-h-11 px-5 py-2 text-[15px] whitespace-normal" type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <LoaderCircle className="animate-spin" aria-hidden="true" /> Дэлгүүрүүдийг шалгаж байна…

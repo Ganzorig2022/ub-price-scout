@@ -26,8 +26,8 @@ export function LeadRow({ lead, onApply }: { lead: CollectedLead; onApply?: (lea
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <b className="truncate text-sm font-medium">{lead.query || lead.excerpt}</b>
-        <small className="truncate text-xs text-muted-foreground">{lead.excerpt}</small>
+        <b className="line-clamp-2 text-sm font-medium">{lead.query || lead.excerpt}</b>
+        <small className="line-clamp-3 text-xs text-muted-foreground">{lead.excerpt}</small>
       </div>
       <strong className="text-[15px] font-semibold whitespace-nowrap tabular-nums">{money(lead.price)}</strong>
       <div className="col-span-2 flex gap-2 sm:col-span-1">
