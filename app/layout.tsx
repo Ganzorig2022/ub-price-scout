@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Instrument_Serif } from "next/font/google";
+import { Golos_Text } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const body = IBM_Plex_Sans({
-  variable: "--font-body",
-  subsets: ["cyrillic", "latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const display = Instrument_Serif({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: "400",
+// Golos Text has the Mongolian Cyrillic letters (ө, ү) in its cyrillic-ext subset.
+const golos = Golos_Text({
+  variable: "--font-sans",
+  subsets: ["cyrillic", "cyrillic-ext", "latin"],
 });
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -41,8 +35,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="mn">
-      <body className={`${body.variable} ${display.variable}`}>
+    <html lang="mn" className={`${golos.variable} font-sans`}>
+      <body>
         {children}
       </body>
     </html>
